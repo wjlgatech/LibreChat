@@ -10,6 +10,12 @@ import { ChatContext, AddedChatContext, useFileMapContext, ChatFormProvider } fr
 import { useChatHelpers, useAddedResponse, useSSE } from '~/hooks';
 import ConversationStarters from './Input/ConversationStarters';
 import { useGetMessagesByConvoId } from '~/data-provider';
+import { voiceListeningState, voiceTranscriptState, voiceAIResponseState } from '~/store/voice';
+import { VoiceTranscriptIndicator } from './Input/VoiceTranscriptIndicator';
+import { VoiceStateDebugger } from './Input/VoiceStateDebugger';
+import VoiceDebug from './Input/VoiceDebug';
+import VoiceDebugScript from './Input/VoiceDebugScript';
+import VoiceDebugEnhanced from './Input/VoiceDebugEnhanced';
 import MessagesView from './Messages/MessagesView';
 import Presentation from './Presentation';
 import ChatForm from './Input/ChatForm';
@@ -34,6 +40,10 @@ function ChatView({ index = 0 }: { index?: number }) {
   const rootSubmission = useRecoilValue(store.submissionByIndex(index));
   const addedSubmission = useRecoilValue(store.submissionByIndex(index + 1));
   const centerFormOnLanding = useRecoilValue(store.centerFormOnLanding);
+  
+  const isListening = useRecoilValue(voiceListeningState);
+  const voiceTranscript = useRecoilValue(voiceTranscriptState);
+  const aiResponse = useRecoilValue(voiceAIResponseState);
 
   const fileMap = useFileMapContext();
 
@@ -97,12 +107,14 @@ function ChatView({ index = 0 }: { index?: number }) {
                       isLandingPage && 'max-w-3xl transition-all duration-200 xl:max-w-4xl',
                     )}
                   >
+                    <VoiceTranscriptIndicator />
                     <ChatForm index={index} />
                     {isLandingPage ? <ConversationStarters /> : <Footer />}
                   </div>
                 </div>
                 {isLandingPage && <Footer />}
               </>
+              <VoiceDebugEnhanced />
             </div>
           </Presentation>
         </AddedChatContext.Provider>

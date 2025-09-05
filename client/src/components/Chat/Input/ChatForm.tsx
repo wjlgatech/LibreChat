@@ -32,6 +32,9 @@ import SendButton from './SendButton';
 import EditBadges from './EditBadges';
 import BadgeRow from './BadgeRow';
 import Mention from './Mention';
+import VoiceChat from './VoiceChat';
+import VoiceChatHybridFixed from './VoiceChatHybridFixed';
+import VoiceChatContinuous from './VoiceChatContinuousFinal4';
 import store from '~/store';
 
 const ChatForm = memo(({ index = 0 }: { index?: number }) => {
@@ -320,6 +323,25 @@ const ChatForm = memo(({ index = 0 }: { index?: number }) => {
                   textAreaRef={textAreaRef}
                   disabled={disableInputs || isNotAppendable}
                   isSubmitting={isSubmitting}
+                />
+              )}
+              {/* Use hybrid approach - Browser Speech API when available, WebRTC fallback */}
+              {(window as any).SpeechRecognition || (window as any).webkitSpeechRecognition ? (
+                <>
+                  <VoiceChatHybridFixed
+                    disabled={disableInputs || isNotAppendable}
+                  />
+                  <VoiceChatContinuous
+                    disabled={disableInputs || isNotAppendable}
+                  />
+                </>
+              ) : (
+                <VoiceChat
+                  disabled={disableInputs || isNotAppendable}
+                  onResponse={(text) => {
+                    // Voice responses will be handled by the voice_edge service
+                    console.log('Voice response:', text);
+                  }}
                 />
               )}
               <div className={`${isRTL ? 'ml-2' : 'mr-2'}`}>
