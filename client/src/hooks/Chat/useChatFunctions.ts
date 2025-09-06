@@ -133,6 +133,17 @@ export default function useChatFunctions({
     const intermediateId = overrideUserMessageId ?? v4();
     parentMessageId = parentMessageId ?? latestMessage?.messageId ?? Constants.NO_PARENT;
 
+    console.log('[useChatFunctions] ASK DETAILS:');
+    console.log('  - Text:', text.substring(0, 50), '...');
+    console.log('  - ParentMessageId:', parentMessageId);
+    console.log('  - LatestMessage ID:', latestMessage?.messageId);
+    console.log('  - LatestMessage isUser:', latestMessage?.isCreatedByUser);
+    console.log('  - Messages count:', currentMessages.length);
+    console.log('  - Last 3 messages:');
+    currentMessages.slice(-3).forEach((msg, idx) => {
+      console.log(`    [${idx}] ID: ${msg.messageId}, Parent: ${msg.parentMessageId}, User: ${msg.isCreatedByUser}, Text: ${msg.text?.substring(0, 30)}...`);
+    });
+    
     logChatRequest({
       index,
       conversation,
