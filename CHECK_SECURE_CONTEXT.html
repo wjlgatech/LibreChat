@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Check Secure Context</title>
+</head>
+<body>
+    <h1>Secure Context Check</h1>
+    <button onclick="checkContext()">Check Current Context</button>
+    <div id="output" style="margin-top: 20px; font-family: monospace;"></div>
+    
+    <script>
+    function checkContext() {
+        const output = document.getElementById('output');
+        output.innerHTML = '';
+        
+        // Current URL
+        output.innerHTML += `<p><strong>Current URL:</strong> ${window.location.href}</p>`;
+        
+        // Secure context
+        output.innerHTML += `<p><strong>Is Secure Context:</strong> ${window.isSecureContext ? 
+            '<span style="color: green">YES ✓</span>' : 
+            '<span style="color: red">NO ✗</span>'}</p>`;
+        
+        // Protocol
+        output.innerHTML += `<p><strong>Protocol:</strong> ${window.location.protocol}</p>`;
+        
+        // Hostname
+        output.innerHTML += `<p><strong>Hostname:</strong> ${window.location.hostname}</p>`;
+        
+        // Check Speech Recognition
+        const hasSpeechRecognition = !!(window.SpeechRecognition || window.webkitSpeechRecognition);
+        output.innerHTML += `<p><strong>Speech Recognition Available:</strong> ${hasSpeechRecognition ? 
+            '<span style="color: green">YES ✓</span>' : 
+            '<span style="color: red">NO ✗</span>'}</p>`;
+        
+        // Test if it works
+        if (hasSpeechRecognition && window.isSecureContext) {
+            try {
+                const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+                const recognition = new SR();
+                output.innerHTML += `<p><strong>Can Create Instance:</strong> <span style="color: green">YES ✓</span></p>`;
+            } catch (e) {
+                output.innerHTML += `<p><strong>Can Create Instance:</strong> <span style="color: red">NO ✗ - ${e.message}</span></p>`;
+            }
+        }
+        
+        // Recommendations
+        output.innerHTML += '<hr><h3>Recommendations:</h3>';
+        if (!window.isSecureContext) {
+            output.innerHTML += '<p style="color: red">⚠️ Not in secure context! Voice recognition will NOT work.</p>';
+            if (window.location.hostname === '127.0.0.1') {
+                output.innerHTML += '<p>➜ Use <a href="http://localhost:' + window.location.port + '">http://localhost:' + window.location.port + '</a> instead</p>';
+            } else if (window.location.protocol === 'http:' && window.location.hostname !== 'localhost') {
+                output.innerHTML += '<p>➜ Use localhost or enable HTTPS</p>';
+            }
+        } else {
+            output.innerHTML += '<p style="color: green">✓ Secure context detected - voice recognition should work!</p>';
+        }
+    }
+    
+    // Auto-check on load
+    window.onload = checkContext;
+    </script>
+</body>
+</html>

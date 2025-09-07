@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Voice Check</title>
+</head>
+<body>
+    <h1>Voice Recognition Check</h1>
+    <button onclick="checkVoice()">Check Voice Support</button>
+    <button onclick="testVoice()">Test Voice Recognition</button>
+    <div id="output"></div>
+    
+    <script>
+    function log(msg) {
+        document.getElementById('output').innerHTML += '<br>' + msg;
+        console.log(msg);
+    }
+    
+    function checkVoice() {
+        log('Checking voice support...');
+        log('window.SpeechRecognition: ' + (typeof window.SpeechRecognition));
+        log('window.webkitSpeechRecognition: ' + (typeof window.webkitSpeechRecognition));
+        
+        const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+        log('SpeechRecognition available: ' + !!SpeechRecognition);
+        
+        if (SpeechRecognition) {
+            try {
+                const test = new SpeechRecognition();
+                log('Successfully created SpeechRecognition instance');
+                log('continuous property exists: ' + ('continuous' in test));
+                log('interimResults property exists: ' + ('interimResults' in test));
+                log('lang property exists: ' + ('lang' in test));
+            } catch (e) {
+                log('Error creating instance: ' + e);
+            }
+        }
+    }
+    
+    function testVoice() {
+        const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+        if (!SpeechRecognition) {
+            log('No speech recognition support');
+            return;
+        }
+        
+        try {
+            const recognition = new SpeechRecognition();
+            recognition.continuous = true;
+            recognition.interimResults = true;
+            recognition.lang = 'en-US';
+            
+            recognition.onstart = () => log('Recognition started');
+            recognition.onaudiostart = () => log('Audio capture started');
+            recognition.onsoundstart = () => log('Sound detected');
+            recognition.onspeechstart = () => log('Speech detected');
+            
+            recognition.onresult = (event) => {
+                log('Result received: ' + event.results.length + ' results');
+                for (let i = 0; i < event.results.length; i++) {
+                    log('Result ' + i + ': ' + event.results[i][0].transcript);
+                }
+            };
+            
+            recognition.onerror = (event) => log('Error: ' + event.error);
+            recognition.onend = () => log('Recognition ended');
+            
+            log('Starting recognition...');
+            recognition.start();
+        } catch (e) {
+            log('Exception: ' + e);
+        }
+    }
+    </script>
+</body>
+</html>

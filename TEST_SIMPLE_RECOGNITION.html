@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Minimal Speech Test</title>
+</head>
+<body>
+    <h1>Click button then speak within 5 seconds</h1>
+    <button onclick="startTest()">Start Test</button>
+    <div id="result">Result will appear here</div>
+    
+    <script>
+        function startTest() {
+            const resultDiv = document.getElementById('result');
+            resultDiv.textContent = 'Starting...';
+            
+            const recognition = new (window.SpeechRecognition || window.webkitSpeechRecognition)();
+            recognition.continuous = false;
+            recognition.interimResults = false;
+            
+            recognition.onstart = () => {
+                resultDiv.textContent = 'Listening... speak now!';
+                console.log('Started');
+            };
+            
+            recognition.onresult = (event) => {
+                const text = event.results[0][0].transcript;
+                resultDiv.textContent = 'You said: ' + text;
+                console.log('Result:', text);
+            };
+            
+            recognition.onerror = (event) => {
+                resultDiv.textContent = 'Error: ' + event.error;
+                console.error('Error:', event);
+            };
+            
+            recognition.onend = () => {
+                console.log('Ended');
+            };
+            
+            try {
+                recognition.start();
+            } catch (e) {
+                resultDiv.textContent = 'Failed to start: ' + e.message;
+            }
+        }
+    </script>
+</body>
+</html>

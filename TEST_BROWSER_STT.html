@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Browser STT Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+        }
+        
+        h1 {
+            color: #333;
+            text-align: center;
+        }
+        
+        button {
+            background-color: #4CAF50;
+            color: white;
+            padding: 15px 30px;
+            border: none;
+            border-radius: 5px;
+            font-size: 18px;
+            cursor: pointer;
+            display: block;
+            margin: 20px auto;
+            transition: background-color 0.3s;
+        }
+        
+        button:hover:not(:disabled) {
+            background-color: #45a049;
+        }
+        
+        button:disabled {
+            background-color: #cccccc;
+            cursor: not-allowed;
+        }
+        
+        button.active {
+            background-color: #f44336;
+        }
+        
+        #transcript {
+            margin-top: 30px;
+            padding: 20px;
+            border: 2px solid #ddd;
+            border-radius: 5px;
+            min-height: 100px;
+            font-size: 16px;
+            line-height: 1.5;
+            white-space: pre-wrap;
+            background-color: #fafafa;
+        }
+        
+        #status {
+            text-align: center;
+            margin: 20px 0;
+            font-size: 14px;
+            color: #666;
+        }
+        
+        .error {
+            color: #f44336;
+            background-color: #ffebee;
+            padding: 10px;
+            border-radius: 5px;
+            margin: 10px 0;
+        }
+
+        .logs {
+            margin-top: 20px;
+            padding: 10px;
+            background-color: #f0f0f0;
+            border-radius: 5px;
+            font-family: monospace;
+            font-size: 12px;
+            max-height: 200px;
+            overflow-y: auto;
+        }
+        
+        .log-entry {
+            margin: 2px 0;
+            padding: 2px 5px;
+        }
+        
+        .log-entry.error {
+            background-color: #ffcccc;
+        }
+        
+        .log-entry.info {
+            background-color: #ccffcc;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Browser Speech-to-Text Test</h1>
+        
+        <p style="text-align: center;">URL: <strong><span id="url"></span></strong></p>
+        <p id="browser-support" style="text-align: center;"></p>
+        
+        <button id="toggleBtn" onclick="toggleRecognition()">Start Recognition</button>
+        
+        <div id="status">Ready to start</div>
+        
+        <div id="error" class="error" style="display: none;"></div>
+        
+        <h3>Transcript:</h3>
+        <div id="transcript">Click the button and speak...</div>
+        
+        <div class="logs" id="logs">
+            <div class="log-entry info">Logs will appear here...</div>
+        </div>
+    </div>
+
+    <script>
+        // Display current URL
+        document.getElementById('url').textContent = window.location.href;
+        
+        let recognition = null;
+        let isRecognizing = false;
+        let finalTranscript = '';
+        
+        // Check browser support
+        function checkBrowserSupport() {
+            const supportStatus = document.getElementById('browser-support');
+            if ('webkitSpeechRecognition' in window) {
+                supportStatus.innerHTML = '<span style="color: green;">✅ Browser supports Speech Recognition (webkit)</span>';
+                addLog('Browser supports webkitSpeechRecognition', 'info');
+            } else if ('SpeechRecognition' in window) {
+                supportStatus.innerHTML = '<span style="color: green;">✅ Browser supports Speech Recognition</span>';
+                addLog('Browser supports SpeechRecognition', 'info');
+            } else {
+                supportStatus.innerHTML = '<span style="color: red;">❌ Browser does not support Speech Recognition</span>';
+                addLog('Browser does not support Speech Recognition', 'error');
+                document.getElementById('toggleBtn').disabled = true;
+            }
+        }
+        
+        function addLog(message, type = 'info') {
+            const logsDiv = document.getElementById('logs');
+            const logEntry = document.createElement('div');
+            logEntry.className = `log-entry ${type}`;
+            const timestamp = new Date().toLocaleTimeString();
+            logEntry.textContent = `[${timestamp}] ${message}`;
+            logsDiv.appendChild(logEntry);
+            logsDiv.scrollTop = logsDiv.scrollHeight;
+        }
+        
+        function initializeRecognition() {
+            const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+            recognition = new SpeechRecognition();
+            
+            recognition.continuous = true;
+            recognition.interimResults = true;
+            recognition.lang = 'en-US';
+            
+            addLog('Recognition initialized with continuous=true, interimResults=true', 'info');
+            
+            recognition.onstart = function() {
+                isRecognizing = true;
+                addLog('Recognition started', 'info');
+                document.getElementById('toggleBtn').textContent = 'Stop Recognition';
+                document.getElementById('toggleBtn').classList.add('active');
+                document.getElementById('status').textContent = '🎤 Listening...';
+                document.getElementById('error').style.display = 'none';
+            };
+            
+            recognition.onresult = function(event) {
+                let interimTranscript = '';
+                
+                for (let i = event.resultIndex; i < event.results.length; i++) {
+                    const transcript = event.results[i][0].transcript;
+                    if (event.results[i].isFinal) {
+                        finalTranscript += transcript + ' ';
+                        addLog(`Final: "${transcript}"`, 'info');
+                    } else {
+                        interimTranscript += transcript;
+                    }
+                }
+                
+                document.getElementById('transcript').textContent = 
+                    finalTranscript + (interimTranscript ? '[' + interimTranscript + ']' : '');
+            };
+            
+            recognition.onerror = function(event) {
+                addLog(`Error: ${event.error}`, 'error');
+                const errorDiv = document.getElementById('error');
+                
+                if (event.error === 'no-speech') {
+                    errorDiv.textContent = 'No speech detected. Keep talking...';
+                    errorDiv.style.display = 'block';
+                    // Don't stop on no-speech error in continuous mode
+                    return;
+                } else if (event.error === 'not-allowed') {
+                    errorDiv.textContent = 'Microphone permission denied. Please allow microphone access.';
+                } else if (event.error === 'network') {
+                    errorDiv.textContent = 'Network error. Please check your internet connection.';
+                } else {
+                    errorDiv.textContent = `Error: ${event.error}`;
+                }
+                
+                errorDiv.style.display = 'block';
+                stopRecognition();
+            };
+            
+            recognition.onend = function() {
+                addLog('Recognition ended', 'info');
+                isRecognizing = false;
+                document.getElementById('toggleBtn').textContent = 'Start Recognition';
+                document.getElementById('toggleBtn').classList.remove('active');
+                document.getElementById('status').textContent = 'Recognition stopped';
+                
+                // In continuous mode, you might want to restart automatically
+                // For this test, we'll leave it stopped
+            };
+        }
+        
+        function startRecognition() {
+            if (!recognition) {
+                initializeRecognition();
+            }
+            
+            try {
+                recognition.start();
+                addLog('Called recognition.start()', 'info');
+            } catch (e) {
+                addLog(`Failed to start: ${e.message}`, 'error');
+                document.getElementById('error').textContent = `Failed to start: ${e.message}`;
+                document.getElementById('error').style.display = 'block';
+            }
+        }
+        
+        function stopRecognition() {
+            if (recognition && isRecognizing) {
+                recognition.stop();
+                addLog('Called recognition.stop()', 'info');
+            }
+        }
+        
+        function toggleRecognition() {
+            if (isRecognizing) {
+                stopRecognition();
+            } else {
+                startRecognition();
+            }
+        }
+        
+        // Clear transcript
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 'c' && e.ctrlKey) {
+                finalTranscript = '';
+                document.getElementById('transcript').textContent = 'Transcript cleared...';
+                addLog('Transcript cleared', 'info');
+            }
+        });
+        
+        // Check support on load
+        checkBrowserSupport();
+    </script>
+</body>
+</html>

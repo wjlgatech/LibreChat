@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Minimal Chrome Speech Test</title>
+</head>
+<body>
+    <h1>Minimal Chrome Speech Recognition Test</h1>
+    <button onclick="testSpeech()">Click to Test</button>
+    <div id="status">Ready</div>
+    <div id="result"></div>
+    
+    <script>
+    function testSpeech() {
+        const status = document.getElementById('status');
+        const result = document.getElementById('result');
+        
+        try {
+            const recognition = new (window.SpeechRecognition || window.webkitSpeechRecognition)();
+            recognition.continuous = true;
+            recognition.interimResults = true;
+            
+            let hasSpokenAnything = false;
+            
+            recognition.onstart = () => {
+                status.textContent = 'Started - speak now!';
+                console.log('Started');
+            };
+            
+            recognition.onaudiostart = () => {
+                console.log('Audio capture started');
+                status.textContent += ' (Audio capturing)';
+            };
+            
+            recognition.onspeechstart = () => {
+                console.log('Speech detected!');
+                hasSpokenAnything = true;
+                status.textContent = 'Speech detected!';
+            };
+            
+            recognition.onresult = (event) => {
+                let transcript = '';
+                for (let i = event.resultIndex; i < event.results.length; i++) {
+                    transcript += event.results[i][0].transcript;
+                }
+                result.textContent = 'Transcript: ' + transcript;
+                console.log('Result:', transcript);
+            };
+            
+            recognition.onerror = (event) => {
+                status.textContent = 'Error: ' + event.error;
+                console.error('Error:', event.error);
+                
+                if (event.error === 'no-speech' && !hasSpokenAnything) {
+                    status.textContent += ' (Make sure to speak immediately after clicking)';
+                }
+            };
+            
+            recognition.onend = () => {
+                console.log('Ended');
+                if (!hasSpokenAnything) {
+                    status.textContent += ' - Ended without detecting speech';
+                } else {
+                    status.textContent = 'Ended after speech';
+                }
+            };
+            
+            recognition.start();
+        } catch (e) {
+            status.textContent = 'Error: ' + e.message;
+            console.error('Failed:', e);
+        }
+    }
+    </script>
+</body>
+</html>
