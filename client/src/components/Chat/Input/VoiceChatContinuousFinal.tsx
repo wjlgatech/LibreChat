@@ -31,6 +31,12 @@ export default function VoiceChatContinuousFinal({ disabled = false }: VoiceChat
   
   const recognitionRef = useRef<any>(null);
   const lastMessageIdRef = useRef<string | null>(null);
+  const isActiveRef = useRef(false);
+  
+  // Keep ref in sync with state
+  useEffect(() => {
+    isActiveRef.current = isActive;
+  }, [isActive]);
   
   // Start recognition - EXACT pattern from debug component
   const startRecognition = useCallback(() => {
@@ -85,11 +91,8 @@ export default function VoiceChatContinuousFinal({ disabled = false }: VoiceChat
             submitMessage(data);
           })();
           
-          // Stop recognition
-          if (recognitionRef.current) {
-            recognitionRef.current.abort();
-            recognitionRef.current = null;
-          }
+          // Clear transcript but keep recognition active
+          finalTranscript = '';
         }, 1500);
       }
     };
@@ -102,8 +105,18 @@ export default function VoiceChatContinuousFinal({ disabled = false }: VoiceChat
     };
     
     recognition.onend = () => {
-      console.log('[VoiceContinuousFinal] Recognition ended');
+      console.log('[VoiceContinuousFinal] Recognition ended, isActive:', isActiveRef.current);
       recognitionRef.current = null;
+      
+      // If still active, restart recognition
+      if (isActiveRef.current) {
+        console.log('[VoiceContinuousFinal] Restarting recognition because still active');
+        setTimeout(() => {
+          if (isActiveRef.current && !recognitionRef.current) {
+            startRecognition();
+          }
+        }, 500);
+      }
     };
     
     recognitionRef.current = recognition;
@@ -126,10 +139,10 @@ export default function VoiceChatContinuousFinal({ disabled = false }: VoiceChat
       // Try to resume after a delay
       setTimeout(() => {
         console.log('[VoiceContinuousFinal] Attempting to resume recognition...');
-        if (isActive && !recognitionRef.current) {
+        if (isActiveRef.current && !recognitionRef.current) {
           startRecognition();
         } else {
-          console.log('[VoiceContinuousFinal] Cannot resume - active:', isActive, 'recognition:', !!recognitionRef.current);
+          console.log('[VoiceContinuousFinal] Cannot resume - active:', isActiveRef.current, 'recognition:', !!recognitionRef.current);
         }
       }, 1000);
     }
