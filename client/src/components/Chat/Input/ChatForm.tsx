@@ -33,7 +33,6 @@ import EditBadges from './EditBadges';
 import BadgeRow from './BadgeRow';
 import Mention from './Mention';
 import VoiceChat from './VoiceChat';
-import VoiceChatHybridFixed from './VoiceChatHybridFixed';
 import VoiceChatContinuousFinal from './VoiceChatContinuousFinal';
 import VoiceTranscriptDisplay from './VoiceTranscriptDisplay';
 import store from '~/store';
@@ -327,16 +326,11 @@ const ChatForm = memo(({ index = 0 }: { index?: number }) => {
                   isSubmitting={isSubmitting}
                 />
               )}
-              {/* Use hybrid approach - Browser Speech API when available, WebRTC fallback */}
+              {/* Continuous voice conversation button */}
               {(window as any).SpeechRecognition || (window as any).webkitSpeechRecognition ? (
-                <>
-                  <VoiceChatHybridFixed
-                    disabled={disableInputs || isNotAppendable}
-                  />
-                  <VoiceChatContinuousFinal
-                    disabled={disableInputs || isNotAppendable}
-                  />
-                </>
+                <VoiceChatContinuousFinal
+                  disabled={disableInputs || isNotAppendable}
+                />
               ) : (
                 <VoiceChat
                   disabled={disableInputs || isNotAppendable}
