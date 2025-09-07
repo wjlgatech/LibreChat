@@ -3,6 +3,7 @@ import { useRecoilValue, useSetRecoilState } from 'recoil';
 import { useToastContext, TooltipAnchor } from '@librechat/client';
 import { useLocalize, useSubmitMessage } from '~/hooks';
 import { useChatFormContext, useChatContext } from '~/Providers';
+import useTextToSpeechBrowser from '~/hooks/Input/useTextToSpeechBrowser';
 import { cn } from '~/utils';
 import { 
   voiceListeningState, 
@@ -29,7 +30,6 @@ export default function VoiceUnified({ disabled = false }: VoiceUnifiedProps) {
   
   // Get TTS settings
   const textToSpeech = useRecoilValue(store.textToSpeech);
-  const automaticPlayback = useRecoilValue(store.automaticPlayback);
   const globalAudioPlaying = useRecoilValue(store.globalAudioPlayingFamily(0));
   
   // Voice states
@@ -40,6 +40,10 @@ export default function VoiceUnified({ disabled = false }: VoiceUnifiedProps) {
   const [isActive, setIsActive] = useState(false);
   const [mode, setMode] = useState<'single' | 'continuous'>('single');
   const [isWaitingForResponse, setIsWaitingForResponse] = useState(false);
+  const [isSpeaking, setIsSpeaking] = useState(false);
+  
+  // Initialize TTS hook
+  const { generateSpeechLocal, cancelSpeechLocal } = useTextToSpeechBrowser({ setIsSpeaking });
   
   const recognitionRef = useRef<any>(null);
   const silenceTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -50,6 +54,9 @@ export default function VoiceUnified({ disabled = false }: VoiceUnifiedProps) {
   const lastSubmittedMessageIdRef = useRef<string | null>(null);
   const pendingMessageRef = useRef<string | null>(null);
   const isWaitingForResponseRef = useRef(false);
+  const lastSpokenMessageIdRef = useRef<string | null>(null);
+  const messageChainRef = useRef<string[]>([]);
+  const lastAIResponseIdRef = useRef<string | null>(null);
   
   // Keep refs in sync
   useEffect(() => {
@@ -58,6 +65,11 @@ export default function VoiceUnified({ disabled = false }: VoiceUnifiedProps) {
     isWaitingForResponseRef.current = isWaitingForResponse;
     console.log('[VoiceUnified] Refs updated - mode:', mode, 'isActive:', isActive, 'isWaiting:', isWaitingForResponse);
   }, [mode, isActive, isWaitingForResponse]);
+  
+  // Debug TTS settings
+  useEffect(() => {
+    console.log('[VoiceUnified] TTS Settings - textToSpeech:', textToSpeech);
+  }, [textToSpeech]);
   
   // Monitor audio playback for continuous mode
   useEffect(() => {
@@ -82,9 +94,40 @@ export default function VoiceUnified({ disabled = false }: VoiceUnifiedProps) {
     }
   }, [globalAudioPlaying, isActive, mode, isWaitingForResponse]);
   
+  // TTS function using the browser TTS hook
+  const speakText = useCallback((text: string) => {
+    if (!textToSpeech) {
+      console.log('[VoiceUnified] TTS not enabled in settings');
+      return;
+    }
+    
+    console.log('[VoiceUnified] Speaking:', text.substring(0, 50) + '...');
+    setIsSpeaking(true);
+    generateSpeechLocal(text);
+  }, [textToSpeech, generateSpeechLocal]);
+  
+  // Monitor when speech ends to resume listening in continuous mode
+  useEffect(() => {
+    if (!isSpeaking && wasPlayingRef.current) {
+      console.log('[VoiceUnified] Speech ended');
+      wasPlayingRef.current = false;
+      
+      // In continuous mode, resume listening after speech ends
+      if (isActiveRef.current && modeRef.current === 'continuous' && !isWaitingForResponseRef.current) {
+        setTimeout(() => {
+          console.log('[VoiceUnified] Resuming listening after speech');
+          startListening();
+        }, 500);
+      }
+    } else if (isSpeaking && !wasPlayingRef.current) {
+      console.log('[VoiceUnified] Speech started');
+      wasPlayingRef.current = true;
+    }
+  }, [isSpeaking, startListening]);
+  
   // Monitor for AI responses in continuous mode
   useEffect(() => {
-    if (!isActive || mode !== 'continuous' || !latestMessage) return;
+    if (!isActive || !latestMessage) return;
     
     const messages = getMessages() || [];
     console.log('[VoiceUnified] Message update - Latest:', latestMessage.messageId, 'IsUser:', latestMessage.isCreatedByUser, 'Parent:', latestMessage.parentMessageId);
@@ -107,12 +150,27 @@ export default function VoiceUnified({ disabled = false }: VoiceUnifiedProps) {
       console.log('[VoiceUnified] AI response received');
       setIsWaitingForResponse(false);
       
-      // Resume listening after AI response if in continuous mode
-      if (!globalAudioPlaying && isActiveRef.current) {
-        setTimeout(() => startListening(), 500);
+      // Speak the AI response if we're in voice mode and haven't spoken it yet
+      if (latestMessage.text && isActiveRef.current && latestMessage.messageId !== lastSpokenMessageIdRef.current) {
+        console.log('[VoiceUnified] Speaking AI response for message:', latestMessage.messageId);
+        console.log('[VoiceUnified] textToSpeech enabled:', textToSpeech);
+        console.log('[VoiceUnified] Message text:', latestMessage.text.substring(0, 100) + '...');
+        lastSpokenMessageIdRef.current = latestMessage.messageId;
+        speakText(latestMessage.text);
+      } else if (latestMessage.messageId === lastSpokenMessageIdRef.current) {
+        console.log('[VoiceUnified] Already spoke this message, skipping');
+        // If not speaking, resume listening in continuous mode
+        if (!isSpeaking && !globalAudioPlaying && isActiveRef.current && mode === 'continuous') {
+          setTimeout(() => startListening(), 500);
+        }
+      } else {
+        console.log('[VoiceUnified] Not speaking - conditions not met:');
+        console.log('  - latestMessage.text:', !!latestMessage.text);
+        console.log('  - isActiveRef.current:', isActiveRef.current);
+        console.log('  - Already spoken:', latestMessage.messageId === lastSpokenMessageIdRef.current);
       }
     }
-  }, [latestMessage, isActive, mode, globalAudioPlaying, getMessages]);
+  }, [latestMessage, isActive, mode, globalAudioPlaying, getMessages, speakText, textToSpeech, isSpeaking]);
   
   const stopListening = useCallback(() => {
     console.log('[VoiceUnified] Stopping listening');
@@ -331,10 +389,10 @@ export default function VoiceUnified({ disabled = false }: VoiceUnifiedProps) {
       // Reset tracking
       messageChainRef.current = [];
       lastAIResponseIdRef.current = null;
+      lastSpokenMessageIdRef.current = null;
       
-      if (window.speechSynthesis) {
-        window.speechSynthesis.cancel();
-      }
+      // Cancel any ongoing speech
+      cancelSpeechLocal();
     } else {
       // Wait to see if it's a double-click
       clickTimeoutRef.current = setTimeout(() => {
@@ -368,9 +426,8 @@ export default function VoiceUnified({ disabled = false }: VoiceUnifiedProps) {
       recognitionRef.current.abort();
       recognitionRef.current = null;
     }
-    if (window.speechSynthesis) {
-      window.speechSynthesis.cancel();
-    }
+    // Cancel any ongoing speech
+    cancelSpeechLocal();
     
     // Double click - continuous mode
     console.log('[VoiceUnified] Activating continuous mode');
@@ -419,11 +476,10 @@ export default function VoiceUnified({ disabled = false }: VoiceUnifiedProps) {
       if (clickTimeoutRef.current) {
         clearTimeout(clickTimeoutRef.current);
       }
-      if (window.speechSynthesis) {
-        window.speechSynthesis.cancel();
-      }
+      // Cancel any ongoing speech
+      cancelSpeechLocal();
     };
-  }, []);
+  }, [cancelSpeechLocal]);
   
   return (
     <TooltipAnchor
