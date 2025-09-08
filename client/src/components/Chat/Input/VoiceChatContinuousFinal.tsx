@@ -1,5 +1,6 @@
 import { useCallback, useRef, useState, useEffect } from 'react';
 import { useRecoilValue } from 'recoil';
+import { useParams } from 'react-router-dom';
 import { useToastContext, TooltipAnchor } from '@librechat/client';
 import { useLocalize, useSubmitMessage } from '~/hooks';
 import { useChatFormContext, useChatContext } from '~/Providers';
@@ -16,14 +17,16 @@ interface VoiceChatContinuousFinalProps {
 
 export default function VoiceChatContinuousFinal({ disabled = false }: VoiceChatContinuousFinalProps) {
   const localize = useLocalize();
+  const { conversationId: urlConversationId } = useParams();
   const { showToast } = useToastContext();
   const { submitMessage } = useSubmitMessage();
   const methods = useChatFormContext();
-  const { conversation, isSubmitting, latestMessage } = useChatContext();
+  const { conversation, isSubmitting, latestMessage, ask } = useChatContext();
   
   // Log conversation details
   console.log('[VoiceContinuousFinal] Conversation:', {
     conversationId: conversation?.conversationId,
+    urlConversationId,
     messagesCount: conversation?.messages?.length,
     endpoint: conversation?.endpoint,
   });
@@ -48,14 +51,19 @@ export default function VoiceChatContinuousFinal({ disabled = false }: VoiceChat
   
   // Track conversation ID once it's assigned
   useEffect(() => {
-    if (conversation?.conversationId && 
-        conversation.conversationId !== 'new' && 
-        conversation.conversationId !== 'search' &&
-        conversation.conversationId !== conversationIdRef.current) {
-      console.log('[VoiceContinuousFinal] Conversation ID updated:', conversation.conversationId);
-      conversationIdRef.current = conversation.conversationId;
+    // Prefer URL conversation ID over context conversation ID
+    const effectiveConversationId = urlConversationId && urlConversationId !== 'new' 
+      ? urlConversationId 
+      : conversation?.conversationId;
+    
+    if (effectiveConversationId && 
+        effectiveConversationId !== 'new' && 
+        effectiveConversationId !== 'search' &&
+        effectiveConversationId !== conversationIdRef.current) {
+      console.log('[VoiceContinuousFinal] Conversation ID updated:', effectiveConversationId);
+      conversationIdRef.current = effectiveConversationId;
     }
-  }, [conversation?.conversationId]);
+  }, [urlConversationId, conversation?.conversationId]);
   
   // Start recognition - EXACT pattern from debug component
   const startRecognition = useCallback(() => {
@@ -110,11 +118,24 @@ export default function VoiceChatContinuousFinal({ disabled = false }: VoiceChat
           setTurnCount(prev => prev + 1);
           
           // Submit the message
-          methods.setValue('text', finalTranscript.trim());
-          methods.handleSubmit((data) => {
-            console.log('[VoiceContinuousFinal] Calling submitMessage with:', data);
-            submitMessage(data);
-          })();
+          const messageText = finalTranscript.trim();
+          console.log('[VoiceContinuousFinal] Submitting:', messageText);
+          console.log('[VoiceContinuousFinal] Using stored conversationId:', conversationIdRef.current);
+          
+          // Use ask directly to have more control over conversation ID
+          if (conversationIdRef.current && conversationIdRef.current !== 'new') {
+            // We have an existing conversation, use it
+            ask({
+              text: messageText,
+              conversationId: conversationIdRef.current,
+            });
+          } else {
+            // New conversation, let the normal flow handle it
+            methods.setValue('text', messageText);
+            methods.handleSubmit((data) => {
+              submitMessage(data);
+            })();
+          }
           
           // Clear transcript but keep recognition active
           finalTranscript = '';
@@ -199,7 +220,7 @@ export default function VoiceChatContinuousFinal({ disabled = false }: VoiceChat
     if (isActive) {
       console.log('[VoiceContinuousFinal] Deactivating');
       setIsActive(false);
-      conversationIdRef.current = null;
+      // Don't clear conversationIdRef - we want to keep it for the session
       if (recognitionRef.current) {
         recognitionRef.current.abort();
         recognitionRef.current = null;
