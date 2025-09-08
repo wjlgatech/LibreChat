@@ -34,7 +34,6 @@ import BadgeRow from './BadgeRow';
 import Mention from './Mention';
 import VoiceChat from './VoiceChat';
 import VoiceChatContinuousFinal from './VoiceChatContinuousFinal';
-import VoiceTranscriptDisplay from './VoiceTranscriptDisplay';
 import store from '~/store';
 
 const ChatForm = memo(({ index = 0 }: { index?: number }) => {
@@ -249,7 +248,6 @@ const ChatForm = memo(({ index = 0 }: { index?: number }) => {
                 : 'border-border-light bg-surface-chat',
             )}
           >
-            <VoiceTranscriptDisplay />
             <TextareaHeader addedConvo={addedConvo} setAddedConvo={setAddedConvo} />
             <EditBadges
               isEditingChatBadges={isEditingBadges}
