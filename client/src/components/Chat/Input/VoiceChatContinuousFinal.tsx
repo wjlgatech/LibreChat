@@ -21,6 +21,13 @@ export default function VoiceChatContinuousFinal({ disabled = false }: VoiceChat
   const methods = useChatFormContext();
   const { conversation, isSubmitting, latestMessage } = useChatContext();
   
+  // Log conversation details
+  console.log('[VoiceContinuousFinal] Conversation:', {
+    conversationId: conversation?.conversationId,
+    messagesCount: conversation?.messages?.length,
+    endpoint: conversation?.endpoint,
+  });
+  
   // Get TTS settings
   const textToSpeech = useRecoilValue(store.textToSpeech);
   const globalAudioPlaying = useRecoilValue(store.globalAudioPlayingFamily(0));
@@ -32,11 +39,23 @@ export default function VoiceChatContinuousFinal({ disabled = false }: VoiceChat
   const recognitionRef = useRef<any>(null);
   const lastMessageIdRef = useRef<string | null>(null);
   const isActiveRef = useRef(false);
+  const conversationIdRef = useRef<string | null>(null);
   
   // Keep ref in sync with state
   useEffect(() => {
     isActiveRef.current = isActive;
   }, [isActive]);
+  
+  // Track conversation ID once it's assigned
+  useEffect(() => {
+    if (conversation?.conversationId && 
+        conversation.conversationId !== 'new' && 
+        conversation.conversationId !== 'search' &&
+        conversation.conversationId !== conversationIdRef.current) {
+      console.log('[VoiceContinuousFinal] Conversation ID updated:', conversation.conversationId);
+      conversationIdRef.current = conversation.conversationId;
+    }
+  }, [conversation?.conversationId]);
   
   // Start recognition - EXACT pattern from debug component
   const startRecognition = useCallback(() => {
@@ -83,11 +102,17 @@ export default function VoiceChatContinuousFinal({ disabled = false }: VoiceChat
       if (finalTranscript.trim()) {
         silenceTimer = setTimeout(() => {
           console.log('[VoiceContinuousFinal] Submitting:', finalTranscript.trim());
+          console.log('[VoiceContinuousFinal] Conversation at submit:', {
+            conversationId: conversation?.conversationId,
+            messagesCount: conversation?.messages?.length,
+            latestMessageId: latestMessage?.messageId,
+          });
           setTurnCount(prev => prev + 1);
           
           // Submit the message
           methods.setValue('text', finalTranscript.trim());
           methods.handleSubmit((data) => {
+            console.log('[VoiceContinuousFinal] Calling submitMessage with:', data);
             submitMessage(data);
           })();
           
@@ -133,12 +158,21 @@ export default function VoiceChatContinuousFinal({ disabled = false }: VoiceChat
     if (!latestMessage || !isActive) return;
     
     if (!latestMessage.isCreatedByUser && latestMessage.messageId !== lastMessageIdRef.current) {
-      console.log('[VoiceContinuousFinal] AI Response detected:', latestMessage.messageId);
+      console.log('[VoiceContinuousFinal] AI Response detected:', {
+        messageId: latestMessage.messageId,
+        conversationId: latestMessage.conversationId,
+        text: latestMessage.text?.substring(0, 50) + '...'
+      });
+      console.log('[VoiceContinuousFinal] Current conversation state:', {
+        conversationId: conversation?.conversationId,
+        messagesCount: conversation?.messages?.length
+      });
       lastMessageIdRef.current = latestMessage.messageId;
       
       // Try to resume after a delay
       setTimeout(() => {
         console.log('[VoiceContinuousFinal] Attempting to resume recognition...');
+        console.log('[VoiceContinuousFinal] Conversation before resume:', conversation?.conversationId);
         if (isActiveRef.current && !recognitionRef.current) {
           startRecognition();
         } else {
@@ -146,7 +180,7 @@ export default function VoiceChatContinuousFinal({ disabled = false }: VoiceChat
         }
       }, 1000);
     }
-  }, [latestMessage, isActive, startRecognition]);
+  }, [latestMessage, isActive, startRecognition, conversation]);
   
   // Monitor audio playback - EXACT pattern from debug component
   useEffect(() => {
@@ -165,6 +199,7 @@ export default function VoiceChatContinuousFinal({ disabled = false }: VoiceChat
     if (isActive) {
       console.log('[VoiceContinuousFinal] Deactivating');
       setIsActive(false);
+      conversationIdRef.current = null;
       if (recognitionRef.current) {
         recognitionRef.current.abort();
         recognitionRef.current = null;
@@ -174,6 +209,7 @@ export default function VoiceChatContinuousFinal({ disabled = false }: VoiceChat
       }
     } else {
       console.log('[VoiceContinuousFinal] Activating continuous mode');
+      console.log('[VoiceContinuousFinal] Current conversation:', conversation?.conversationId);
       setIsActive(true);
       setTurnCount(0);
       startRecognition();
@@ -184,7 +220,7 @@ export default function VoiceChatContinuousFinal({ disabled = false }: VoiceChat
         duration: 3000,
       });
     }
-  }, [isActive, startRecognition, showToast]);
+  }, [isActive, startRecognition, showToast, conversation]);
   
   // Get icon color based on state
   const getIconColor = () => {
