@@ -2,7 +2,6 @@ import React from 'react';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { RecoilRoot } from 'recoil';
 import { useParams } from 'react-router-dom';
-import VoiceChatContinuousFinal from '../VoiceChatContinuousFinal';
 
 // Mock dependencies
 jest.mock('react-router-dom', () => ({
@@ -49,13 +48,19 @@ describe('VoiceChatContinuousFinal - Session Continuity Fix', () => {
   let mockHandleSubmit: jest.Mock;
   let mockConversation: any;
   let submittedMessages: any[] = [];
+  let VoiceChatContinuousFinal: any;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     // Reset state
     submittedMessages = [];
     
-    // Mock window speech recognition
+    // Mock window speech recognition BEFORE importing component
     (window as any).SpeechRecognition = jest.fn(() => mockSpeechRecognition);
+    (window as any).webkitSpeechRecognition = jest.fn(() => mockSpeechRecognition);
+    
+    // Dynamically import component after mocks are set up
+    const module = await import('../VoiceChatContinuousFinal');
+    VoiceChatContinuousFinal = module.default;
     
     // Mock URL params to simulate conversation route
     (useParams as jest.Mock).mockReturnValue({
@@ -123,6 +128,7 @@ describe('VoiceChatContinuousFinal - Session Continuity Fix', () => {
   afterEach(() => {
     jest.clearAllMocks();
     delete (window as any).SpeechRecognition;
+    delete (window as any).webkitSpeechRecognition;
   });
 
   it('should use the SAME conversation ID for all messages in a session', async () => {
@@ -136,6 +142,14 @@ describe('VoiceChatContinuousFinal - Session Continuity Fix', () => {
     const button = screen.getByRole('button');
     fireEvent.click(button);
 
+    // Wait for recognition to start
+    await waitFor(() => {
+      expect(mockSpeechRecognition.start).toHaveBeenCalled();
+    });
+    
+    // Simulate recognition started
+    mockSpeechRecognition.onstart?.();
+
     // TURN 1: First message
     mockSetValue('text', 'Hello first message');
     const firstResult = {
@@ -145,13 +159,18 @@ describe('VoiceChatContinuousFinal - Session Continuity Fix', () => {
         isFinal: true,
       }],
     };
+    
+    console.log('Triggering speech result:', firstResult);
     mockSpeechRecognition.onresult?.(firstResult as any);
 
     await waitFor(() => {
       // Either ask or submitMessage should have been called
       const totalCalls = mockAsk.mock.calls.length + mockSubmitMessage.mock.calls.length;
+      console.log('Total calls after first message:', totalCalls);
+      console.log('Ask calls:', mockAsk.mock.calls);
+      console.log('SubmitMessage calls:', mockSubmitMessage.mock.calls);
       expect(totalCalls).toBe(1);
-    });
+    }, { timeout: 3000 });
 
     // Simulate server assigning conversation ID after first message
     const assignedConversationId = 'actual-conversation-123';
