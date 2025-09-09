@@ -59,9 +59,12 @@ export default function StreamAudio({ index = 0 }) {
       isCreatedByUser: latestMessage?.isCreatedByUser,
       latestText: !!latestText,
       messageId: latestMessage?.messageId,
+      messageIdValid: latestMessage?.messageId && !latestMessage?.messageId.includes('_'),
       isFetching,
       activeRunId,
       audioRunId,
+      activeRunIdValid: activeRunId != null,
+      runIdsMatch: activeRunId === audioRunId,
       index,
     });
 
@@ -110,14 +113,29 @@ export default function StreamAudio({ index = 0 }) {
         }
 
         logger.log('Fetching audio...', navigator.userAgent);
+        const requestPayload = { messageId: latestMessage?.messageId, runId: activeRunId, voice };
+        console.log('[StreamAudio] TTS Request:', requestPayload);
+        console.log('[StreamAudio] TTS Headers:', { 'Content-Type': 'application/json', Authorization: `Bearer ${token?.substring(0, 10)}...` });
+        
         const response = await fetch('/api/files/speech/tts', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-          body: JSON.stringify({ messageId: latestMessage?.messageId, runId: activeRunId, voice }),
+          body: JSON.stringify(requestPayload),
         });
 
         if (!response.ok) {
-          throw new Error('Failed to fetch audio');
+          console.error('[StreamAudio] TTS Error Response:', {
+            status: response.status,
+            statusText: response.statusText,
+            url: response.url
+          });
+          try {
+            const errorText = await response.text();
+            console.error('[StreamAudio] TTS Error Body:', errorText);
+          } catch (e) {
+            console.error('[StreamAudio] Could not read error body:', e);
+          }
+          throw new Error(`TTS request failed: ${response.status} ${response.statusText}`);
         }
         if (!response.body) {
           throw new Error('Null Response body');
