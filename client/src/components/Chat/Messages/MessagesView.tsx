@@ -4,7 +4,7 @@ import { CSSTransition } from 'react-transition-group';
 import type { TMessage } from 'librechat-data-provider';
 import { useScreenshot, useMessageScrolling, useLocalize } from '~/hooks';
 import ScrollToBottom from '~/components/Messages/ScrollToBottom';
-import MultiMessage from './MultiMessage';
+import AllMessages from './AllMessages';
 import { cn } from '~/utils';
 import store from '~/store';
 
@@ -57,7 +57,7 @@ export default function MessagesView({
               ) : (
                 <>
                   <div ref={screenshotTargetRef}>
-                    <MultiMessage
+                    <AllMessages
                       key={conversationId}
                       messagesTree={_messagesTree}
                       messageId={conversationId ?? null}
