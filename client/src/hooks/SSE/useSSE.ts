@@ -120,6 +120,14 @@ export default function useSSE(
 
     sse.addEventListener('message', (e: MessageEvent) => {
       const data = JSON.parse(e.data);
+      console.log('[useSSE] Received SSE event:', { 
+        hasCreated: data.created != null, 
+        hasSync: data.sync != null, 
+        hasFinal: data.final != null, 
+        hasEvent: data.event != null, 
+        hasType: data.type != null,
+        data: data
+      });
 
       if (data.final != null) {
         clearDraft(submission.conversation?.conversationId);
@@ -130,6 +138,7 @@ export default function useSSE(
         return;
       } else if (data.created != null) {
         const runId = v4();
+        console.log('[useSSE] Setting activeRunId for created event:', runId);
         setActiveRunId(runId);
         userMessage = {
           ...userMessage,
@@ -142,6 +151,7 @@ export default function useSSE(
         stepHandler(data, { ...submission, userMessage } as EventSubmission);
       } else if (data.sync != null) {
         const runId = v4();
+        console.log('[useSSE] Setting activeRunId for sync event:', runId);
         setActiveRunId(runId);
         /* synchronize messages to Assistants API as well as with real DB ID's */
         syncHandler(data, { ...submission, userMessage } as EventSubmission);
