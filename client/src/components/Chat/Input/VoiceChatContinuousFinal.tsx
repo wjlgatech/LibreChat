@@ -1,5 +1,5 @@
 import { useCallback, useRef, useState, useEffect } from 'react';
-import { useRecoilValue } from 'recoil';
+import { useRecoilValue, useSetRecoilState } from 'recoil';
 import { useParams } from 'react-router-dom';
 import { useToastContext, TooltipAnchor } from '@librechat/client';
 import { useLocalize, useSubmitMessage } from '~/hooks';
@@ -34,6 +34,7 @@ export default function VoiceChatContinuousFinal({ disabled = false }: VoiceChat
   // Get TTS settings
   const textToSpeech = useRecoilValue(store.textToSpeech);
   const globalAudioPlaying = useRecoilValue(store.globalAudioPlayingFamily(0));
+  const setAutomaticPlayback = useSetRecoilState(store.automaticPlayback);
   
   // Simple state - following debug component pattern
   const [isActive, setIsActive] = useState(false);
@@ -237,6 +238,10 @@ export default function VoiceChatContinuousFinal({ disabled = false }: VoiceChat
     if (isActive) {
       console.log('[VoiceContinuousFinal] Deactivating');
       setIsActive(false);
+      
+      // Disable automatic TTS playback when continuous mode is deactivated
+      setAutomaticPlayback(false);
+      
       // Don't clear conversationIdRef - we want to keep it for the session
       if (recognitionRef.current) {
         recognitionRef.current.abort();
@@ -250,6 +255,12 @@ export default function VoiceChatContinuousFinal({ disabled = false }: VoiceChat
       console.log('[VoiceContinuousFinal] Current conversation:', conversation?.conversationId);
       setIsActive(true);
       setTurnCount(0);
+      
+      // Enable automatic TTS playback when continuous mode is active
+      if (textToSpeech) {
+        setAutomaticPlayback(true);
+      }
+      
       // Delay starting recognition to ensure state is updated
       setTimeout(() => startRecognition(), 100);
       
@@ -259,7 +270,7 @@ export default function VoiceChatContinuousFinal({ disabled = false }: VoiceChat
         duration: 3000,
       });
     }
-  }, [isActive, startRecognition, showToast, conversation]);
+  }, [isActive, startRecognition, showToast, conversation, textToSpeech, setAutomaticPlayback]);
   
   // Get icon color based on state
   const getIconColor = () => {
