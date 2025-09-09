@@ -50,6 +50,21 @@ export default function StreamAudio({ index = 0 }) {
   useEffect(() => {
     const latestText = getLatestText(latestMessage);
 
+    // Debug logging
+    console.log('[StreamAudio] TTS check:', {
+      token: !!token,
+      automaticPlayback,
+      isSubmitting,
+      latestMessage: !!latestMessage,
+      isCreatedByUser: latestMessage?.isCreatedByUser,
+      latestText: !!latestText,
+      messageId: latestMessage?.messageId,
+      isFetching,
+      activeRunId,
+      audioRunId,
+      index,
+    });
+
     const shouldFetch = !!(
       token != null &&
       automaticPlayback &&
@@ -63,6 +78,8 @@ export default function StreamAudio({ index = 0 }) {
       activeRunId != null &&
       activeRunId !== audioRunId
     );
+
+    console.log('[StreamAudio] shouldFetch:', shouldFetch);
 
     if (!shouldFetch) {
       return;

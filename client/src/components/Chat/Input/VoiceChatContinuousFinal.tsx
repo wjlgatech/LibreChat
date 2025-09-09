@@ -206,6 +206,14 @@ export default function VoiceChatContinuousFinal({ disabled = false }: VoiceChat
   
   // Monitor AI responses - EXACT pattern from debug component
   useEffect(() => {
+    console.log('[VoiceContinuousFinal] Message monitoring:', {
+      isActive,
+      latestMessage: !!latestMessage,
+      isCreatedByUser: latestMessage?.isCreatedByUser,
+      messageId: latestMessage?.messageId,
+      lastMessageId: lastMessageIdRef.current,
+    });
+
     if (!latestMessage || !isActive) return;
     
     if (!latestMessage.isCreatedByUser && latestMessage.messageId !== lastMessageIdRef.current) {

@@ -44,6 +44,26 @@
 - Check browser console for:
   - `[VoiceContinuousFinal] Activating continuous mode`
   - `[VoiceContinuousFinal] AI Response detected`
-  - StreamAudio logs showing audio fetching
+  - `[StreamAudio] TTS check:` - Shows all conditions for TTS activation
+  - `[StreamAudio] shouldFetch:` - Shows if TTS will be triggered
 - Check Network tab for `/api/files/speech/tts` requests
 - Verify MediaSource API is being used for streaming (if supported)
+
+## Debug Information
+When TTS is not working, check these conditions in console:
+1. `token` - User must be authenticated
+2. `automaticPlayback` - Should be true when continuous mode is active
+3. `isSubmitting` - Should be false (not currently submitting)
+4. `latestMessage` - Must exist
+5. `isCreatedByUser` - Should be false (AI message)
+6. `latestText` - Message must have text content
+7. `messageId` - Must exist and not contain '_'
+8. `isFetching` - Should be false (not already fetching audio)
+9. `activeRunId` - Must exist (set by SSE events)
+10. `activeRunId !== audioRunId` - Must be a new run
+
+## Common Issues
+1. **No audio playing**: Check if all conditions above are met
+2. **activeRunId is null**: Server may not be sending SSE events properly
+3. **automaticPlayback false**: VoiceChatContinuousFinal may not be setting it correctly
+4. **No AI response detected**: latestMessage may not be updating properly
