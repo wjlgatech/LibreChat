@@ -101,7 +101,7 @@ describe('AllMessages', () => {
     expect(screen.getByText('Thank you!')).toBeInTheDocument();
   });
 
-  it('does not pass setSiblingIdx to child components', () => {
+  it('does not pass sibling navigation props to child components', () => {
     render(
       <AllMessages
         messageId="root"
@@ -116,6 +116,9 @@ describe('AllMessages', () => {
     messages.forEach(message => {
       expect(message).toHaveAttribute('data-has-navigation', 'false');
     });
+    
+    // Verify no navigation text like "1 / 4" is shown
+    expect(screen.queryByText(/\d+ \/ \d+/)).not.toBeInTheDocument();
   });
 
   it('handles empty messages tree', () => {

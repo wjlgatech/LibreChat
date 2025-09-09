@@ -23,15 +23,14 @@ export default function AllMessages({
           return null;
         }
 
-        // For multi-sibling messages, we still need to pass sibling info
-        // but we show all messages at once
+        // We don't pass sibling info to prevent navigation display
         const commonProps = {
           message,
           currentEditId,
           setCurrentEditId,
-          siblingIdx: index,
-          siblingCount: messagesTree.length,
-          // We don't pass setSiblingIdx because we don't want navigation
+          // Don't pass siblingIdx, siblingCount, or setSiblingIdx to hide navigation
+          siblingIdx: undefined,
+          siblingCount: undefined,
           setSiblingIdx: undefined,
         };
 
