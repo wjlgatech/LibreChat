@@ -75,6 +75,18 @@ export default function VoiceChatContinuousFinal({ disabled = false }: VoiceChat
       return;
     }
     
+    // Don't start if we're not active
+    if (!isActiveRef.current) {
+      console.log('[VoiceContinuousFinal] Not starting recognition - button is not active');
+      return;
+    }
+    
+    // Don't start if we already have a recognition instance
+    if (recognitionRef.current) {
+      console.log('[VoiceContinuousFinal] Recognition already exists, not starting new one');
+      return;
+    }
+    
     console.log('[VoiceContinuousFinal] Starting recognition...');
     
     const recognition = new SpeechRecognition();
@@ -90,6 +102,12 @@ export default function VoiceChatContinuousFinal({ disabled = false }: VoiceChat
     };
     
     recognition.onresult = (event: any) => {
+      // Check if we're still active
+      if (!isActiveRef.current) {
+        console.log('[VoiceContinuousFinal] Ignoring results - button is not active');
+        return;
+      }
+      
       let interim = '';
       
       for (let i = event.resultIndex; i < event.results.length; i++) {
@@ -109,6 +127,11 @@ export default function VoiceChatContinuousFinal({ disabled = false }: VoiceChat
       // Set new timer for submission
       if (finalTranscript.trim()) {
         silenceTimer = setTimeout(() => {
+          if (!isActiveRef.current) {
+            console.log('[VoiceContinuousFinal] Not submitting - button is not active');
+            return;
+          }
+          
           console.log('[VoiceContinuousFinal] Submitting:', finalTranscript.trim());
           console.log('[VoiceContinuousFinal] Conversation at submit:', {
             conversationId: conversation?.conversationId,
@@ -145,7 +168,7 @@ export default function VoiceChatContinuousFinal({ disabled = false }: VoiceChat
     
     recognition.onerror = (event: any) => {
       console.log('[VoiceContinuousFinal] Error:', event.error);
-      if (event.error !== 'aborted') {
+      if (event.error !== 'aborted' && isActiveRef.current) {
         showToast({ message: `Error: ${event.error}`, status: 'error' });
       }
     };
@@ -153,6 +176,11 @@ export default function VoiceChatContinuousFinal({ disabled = false }: VoiceChat
     recognition.onend = () => {
       console.log('[VoiceContinuousFinal] Recognition ended, isActive:', isActiveRef.current);
       recognitionRef.current = null;
+      
+      // Clear any pending timers
+      if (silenceTimer) {
+        clearTimeout(silenceTimer);
+      }
       
       // If still active, restart recognition
       if (isActiveRef.current) {
@@ -171,8 +199,9 @@ export default function VoiceChatContinuousFinal({ disabled = false }: VoiceChat
       recognition.start();
     } catch (error) {
       console.log('[VoiceContinuousFinal] Failed to start:', error);
+      recognitionRef.current = null;
     }
-  }, [methods, submitMessage, showToast]);
+  }, [methods, submitMessage, showToast, conversation, latestMessage, ask]);
   
   // Monitor AI responses - EXACT pattern from debug component
   useEffect(() => {
@@ -203,18 +232,6 @@ export default function VoiceChatContinuousFinal({ disabled = false }: VoiceChat
     }
   }, [latestMessage, isActive, startRecognition, conversation]);
   
-  // Monitor audio playback - EXACT pattern from debug component
-  useEffect(() => {
-    if (!isActive) return;
-    
-    console.log('[VoiceContinuousFinal] Audio playing:', globalAudioPlaying);
-    
-    if (!globalAudioPlaying && !recognitionRef.current) {
-      console.log('[VoiceContinuousFinal] Audio stopped, starting recognition');
-      setTimeout(() => startRecognition(), 500);
-    }
-  }, [globalAudioPlaying, isActive, startRecognition]);
-  
   // Toggle active state
   const toggle = useCallback(() => {
     if (isActive) {
@@ -233,7 +250,8 @@ export default function VoiceChatContinuousFinal({ disabled = false }: VoiceChat
       console.log('[VoiceContinuousFinal] Current conversation:', conversation?.conversationId);
       setIsActive(true);
       setTurnCount(0);
-      startRecognition();
+      // Delay starting recognition to ensure state is updated
+      setTimeout(() => startRecognition(), 100);
       
       showToast({
         message: 'Continuous voice mode activated. Speak naturally.',

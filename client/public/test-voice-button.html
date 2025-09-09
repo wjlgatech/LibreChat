@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Voice Recognition Button Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
+        }
+        button {
+            font-size: 16px;
+            padding: 10px 20px;
+            margin: 10px 0;
+            cursor: pointer;
+        }
+        button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        #log {
+            background: #f4f4f4;
+            padding: 10px;
+            margin: 20px 0;
+            max-height: 400px;
+            overflow-y: auto;
+            font-family: monospace;
+        }
+        .log-entry {
+            margin: 5px 0;
+            padding: 5px;
+            border-left: 3px solid #ccc;
+        }
+        .log-error {
+            border-left-color: red;
+            color: red;
+        }
+        .log-success {
+            border-left-color: green;
+            color: green;
+        }
+        .log-info {
+            border-left-color: blue;
+            color: blue;
+        }
+        .status {
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 5px;
+            font-weight: bold;
+        }
+        .status-active {
+            background: #d4f5d4;
+            color: green;
+        }
+        .status-inactive {
+            background: #f5d4d4;
+            color: red;
+        }
+    </style>
+</head>
+<body>
+    <h1>Voice Recognition Button Test</h1>
+    
+    <h2>Test Status</h2>
+    <div id="status" class="status status-inactive">Button OFF</div>
+    
+    <h2>Controls</h2>
+    <button id="voiceButton">🎤 Voice Button</button>
+    <button id="clearLog">Clear Log</button>
+    
+    <h2>Transcript</h2>
+    <div id="transcript">No transcript yet...</div>
+    
+    <h2>Debug Log</h2>
+    <div id="log"></div>
+
+    <script>
+        const log = document.getElementById('log');
+        const transcript = document.getElementById('transcript');
+        const status = document.getElementById('status');
+        const voiceButton = document.getElementById('voiceButton');
+        const clearButton = document.getElementById('clearLog');
+        
+        let isActive = false;
+        let recognition = null;
+        let isActiveRef = { current: false };
+        
+        function addLog(message, type = 'info') {
+            const entry = document.createElement('div');
+            entry.className = `log-entry log-${type}`;
+            entry.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
+            log.appendChild(entry);
+            log.scrollTop = log.scrollHeight;
+        }
+        
+        clearButton.addEventListener('click', () => {
+            log.innerHTML = '';
+            addLog('Log cleared', 'info');
+        });
+        
+        // Check for speech recognition support
+        const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+        const hasSpeechRecognition = !!SpeechRecognition;
+        
+        if (!hasSpeechRecognition) {
+            addLog('Speech recognition not supported in this browser', 'error');
+            voiceButton.disabled = true;
+        } else {
+            addLog('Speech recognition is supported', 'success');
+        }
+        
+        function updateStatus(active) {
+            if (active) {
+                status.textContent = 'Button ON - Voice recognition active';
+                status.className = 'status status-active';
+                voiceButton.textContent = '🛑 Stop Voice';
+            } else {
+                status.textContent = 'Button OFF - Voice recognition inactive';
+                status.className = 'status status-inactive';
+                voiceButton.textContent = '🎤 Voice Button';
+            }
+        }
+        
+        function startRecognition() {
+            if (!hasSpeechRecognition) {
+                addLog('Cannot start - speech recognition not supported', 'error');
+                return;
+            }
+            
+            if (!isActiveRef.current) {
+                addLog('Not starting recognition - button is not active', 'info');
+                return;
+            }
+            
+            if (recognition) {
+                addLog('Recognition already exists, not starting new one', 'info');
+                return;
+            }
+            
+            addLog('Starting recognition...', 'info');
+            
+            recognition = new SpeechRecognition();
+            recognition.continuous = true;
+            recognition.interimResults = true;
+            recognition.lang = 'en-US';
+            
+            recognition.onstart = () => {
+                addLog('Recognition started successfully', 'success');
+            };
+            
+            recognition.onresult = (event) => {
+                if (!isActiveRef.current) {
+                    addLog('Ignoring results - button is not active', 'info');
+                    return;
+                }
+                
+                let finalTranscript = '';
+                let interimTranscript = '';
+                
+                for (let i = event.resultIndex; i < event.results.length; i++) {
+                    if (event.results[i].isFinal) {
+                        finalTranscript += event.results[i][0].transcript + ' ';
+                    } else {
+                        interimTranscript = event.results[i][0].transcript;
+                    }
+                }
+                
+                const fullTranscript = finalTranscript + interimTranscript;
+                transcript.textContent = fullTranscript || 'Listening...';
+                
+                if (fullTranscript) {
+                    addLog(`Transcript: ${fullTranscript}`, 'info');
+                }
+            };
+            
+            recognition.onerror = (event) => {
+                addLog(`Error: ${event.error}`, 'error');
+                if (event.error !== 'aborted' && isActiveRef.current) {
+                    addLog('Will try to restart after error', 'info');
+                }
+            };
+            
+            recognition.onend = () => {
+                addLog(`Recognition ended, isActive: ${isActiveRef.current}`, 'info');
+                recognition = null;
+                
+                if (isActiveRef.current) {
+                    addLog('Restarting recognition because still active', 'info');
+                    setTimeout(() => {
+                        if (isActiveRef.current && !recognition) {
+                            startRecognition();
+                        }
+                    }, 500);
+                }
+            };
+            
+            try {
+                recognition.start();
+            } catch (error) {
+                addLog(`Failed to start: ${error}`, 'error');
+                recognition = null;
+            }
+        }
+        
+        function toggle() {
+            if (isActive) {
+                addLog('Deactivating voice recognition', 'info');
+                isActive = false;
+                isActiveRef.current = false;
+                updateStatus(false);
+                
+                if (recognition) {
+                    recognition.abort();
+                    recognition = null;
+                }
+            } else {
+                addLog('Activating voice recognition', 'info');
+                isActive = true;
+                isActiveRef.current = true;
+                updateStatus(true);
+                transcript.textContent = 'Listening...';
+                
+                // Delay starting recognition to ensure state is updated
+                setTimeout(() => startRecognition(), 100);
+            }
+        }
+        
+        voiceButton.addEventListener('click', toggle);
+        
+        addLog('Test page loaded and ready', 'success');
+        addLog('Click the Voice Button to start', 'info');
+    </script>
+</body>
+</html>
