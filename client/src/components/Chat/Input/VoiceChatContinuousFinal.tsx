@@ -184,9 +184,39 @@ export default function VoiceChatContinuousFinal({ disabled = false }: VoiceChat
     };
     
     recognition.onerror = (event: any) => {
-      console.log('[VoiceContinuousFinal] Error:', event.error);
-      if (event.error !== 'aborted' && isActiveRef.current) {
-        showToast({ message: `Error: ${event.error}`, status: 'error' });
+      console.log('[VoiceContinuousFinal] Recognition Error:', event.error, event);
+      recognitionRef.current = null;
+      
+      if (event.error === 'aborted') {
+        console.log('[VoiceContinuousFinal] Recognition aborted - this is expected during audio playback');
+        return;
+      }
+      
+      if (event.error === 'no-speech') {
+        console.log('[VoiceContinuousFinal] No speech detected - will restart if still active');
+        if (isActiveRef.current && !globalAudioPlayingRef.current) {
+          setTimeout(() => {
+            if (isActiveRef.current && !recognitionRef.current && !globalAudioPlayingRef.current) {
+              console.log('[VoiceContinuousFinal] Restarting after no-speech error');
+              startRecognition();
+            }
+          }, 1000);
+        }
+        return;
+      }
+      
+      if (isActiveRef.current) {
+        showToast({ message: `Voice recognition error: ${event.error}`, status: 'error' });
+        
+        // Try to recover from errors by restarting recognition
+        if (!globalAudioPlayingRef.current) {
+          setTimeout(() => {
+            if (isActiveRef.current && !recognitionRef.current && !globalAudioPlayingRef.current) {
+              console.log('[VoiceContinuousFinal] Attempting to recover from error by restarting');
+              startRecognition();
+            }
+          }, 2000);
+        }
       }
     };
     
@@ -270,6 +300,8 @@ export default function VoiceChatContinuousFinal({ disabled = false }: VoiceChat
       return;
     }
     
+    let timeoutId: NodeJS.Timeout | null = null;
+    
     if (globalAudioPlaying && recognitionRef.current) {
       // Pause recognition while AI is speaking
       console.log('[VoiceContinuousFinal] Pausing recognition - AI is speaking');
@@ -278,7 +310,11 @@ export default function VoiceChatContinuousFinal({ disabled = false }: VoiceChat
     } else if (!globalAudioPlaying && !recognitionRef.current && isActiveRef.current) {
       // Resume recognition after AI finishes speaking
       console.log('[VoiceContinuousFinal] AI finished speaking, preparing to resume recognition');
-      setTimeout(() => {
+      
+      // Use a longer delay and clear any existing timeout to handle multiple audio end events
+      if (timeoutId) clearTimeout(timeoutId);
+      
+      timeoutId = setTimeout(() => {
         console.log('[VoiceContinuousFinal] Checking conditions for restart:', {
           isActive: isActiveRef.current,
           hasRecognition: !!recognitionRef.current,
@@ -291,14 +327,40 @@ export default function VoiceChatContinuousFinal({ disabled = false }: VoiceChat
         } else {
           console.log('[VoiceContinuousFinal] Cannot restart recognition - conditions not met');
         }
-      }, 500); // Small delay to ensure audio has fully stopped
+      }, 1000); // Increased delay to ensure audio has fully stopped
     } else {
       console.log('[VoiceContinuousFinal] No action needed:', {
         audioPlaying: globalAudioPlaying,
         hasRecognition: !!recognitionRef.current,
       });
     }
+    
+    return () => {
+      if (timeoutId) clearTimeout(timeoutId);
+    };
   }, [globalAudioPlaying, isActive, startRecognition]);
+  
+  // Health check to ensure recognition stays active
+  useEffect(() => {
+    if (!isActive) return;
+    
+    const healthCheck = setInterval(() => {
+      console.log('[VoiceContinuousFinal] Health check:', {
+        isActive: isActiveRef.current,
+        hasRecognition: !!recognitionRef.current,
+        audioPlaying: globalAudioPlayingRef.current,
+        timestamp: new Date().toISOString(),
+      });
+      
+      // If continuous mode is active but recognition is not running and AI is not speaking
+      if (isActiveRef.current && !recognitionRef.current && !globalAudioPlayingRef.current) {
+        console.log('[VoiceContinuousFinal] Health check: Recognition should be running but is not, restarting...');
+        startRecognition();
+      }
+    }, 3000); // Check every 3 seconds
+    
+    return () => clearInterval(healthCheck);
+  }, [isActive, startRecognition]);
   
   // Toggle active state
   const toggle = useCallback(() => {
