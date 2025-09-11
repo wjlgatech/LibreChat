@@ -199,14 +199,16 @@ export default function VoiceChatContinuousFinal({ disabled = false }: VoiceChat
         clearTimeout(silenceTimer);
       }
       
-      // If still active, restart recognition
-      if (isActiveRef.current) {
-        console.log('[VoiceContinuousFinal] Restarting recognition because still active');
+      // If still active and AI is not speaking, restart recognition
+      if (isActiveRef.current && !globalAudioPlayingRef.current) {
+        console.log('[VoiceContinuousFinal] Restarting recognition because still active and AI not speaking');
         setTimeout(() => {
-          if (isActiveRef.current && !recognitionRef.current) {
+          if (isActiveRef.current && !recognitionRef.current && !globalAudioPlayingRef.current) {
             startRecognition();
           }
         }, 500);
+      } else if (isActiveRef.current && globalAudioPlayingRef.current) {
+        console.log('[VoiceContinuousFinal] Not restarting recognition - AI is speaking');
       }
     };
     
@@ -245,6 +247,7 @@ export default function VoiceChatContinuousFinal({ disabled = false }: VoiceChat
       lastMessageIdRef.current = latestMessage.messageId;
       
       // Stop recognition when AI starts responding to prevent overlap
+      // The audio playback monitoring effect will handle restarting it
       if (recognitionRef.current) {
         console.log('[VoiceContinuousFinal] Stopping recognition for AI response');
         recognitionRef.current.abort();
@@ -255,13 +258,17 @@ export default function VoiceChatContinuousFinal({ disabled = false }: VoiceChat
   
   // Monitor audio playback state and manage recognition accordingly
   useEffect(() => {
-    console.log('[VoiceContinuousFinal] Audio playback state:', {
+    console.log('[VoiceContinuousFinal] Audio playback state changed:', {
       globalAudioPlaying,
       isActive,
       hasRecognition: !!recognitionRef.current,
+      timestamp: new Date().toISOString(),
     });
     
-    if (!isActive) return;
+    if (!isActive) {
+      console.log('[VoiceContinuousFinal] Not managing recognition - continuous mode is not active');
+      return;
+    }
     
     if (globalAudioPlaying && recognitionRef.current) {
       // Pause recognition while AI is speaking
@@ -270,12 +277,26 @@ export default function VoiceChatContinuousFinal({ disabled = false }: VoiceChat
       recognitionRef.current = null;
     } else if (!globalAudioPlaying && !recognitionRef.current && isActiveRef.current) {
       // Resume recognition after AI finishes speaking
-      console.log('[VoiceContinuousFinal] Resuming recognition - AI finished speaking');
+      console.log('[VoiceContinuousFinal] AI finished speaking, preparing to resume recognition');
       setTimeout(() => {
-        if (isActiveRef.current && !recognitionRef.current && !globalAudioPlaying) {
+        console.log('[VoiceContinuousFinal] Checking conditions for restart:', {
+          isActive: isActiveRef.current,
+          hasRecognition: !!recognitionRef.current,
+          audioPlaying: globalAudioPlaying,
+          globalAudioPlayingRef: globalAudioPlayingRef.current,
+        });
+        if (isActiveRef.current && !recognitionRef.current && !globalAudioPlayingRef.current) {
+          console.log('[VoiceContinuousFinal] All conditions met, restarting recognition');
           startRecognition();
+        } else {
+          console.log('[VoiceContinuousFinal] Cannot restart recognition - conditions not met');
         }
       }, 500); // Small delay to ensure audio has fully stopped
+    } else {
+      console.log('[VoiceContinuousFinal] No action needed:', {
+        audioPlaying: globalAudioPlaying,
+        hasRecognition: !!recognitionRef.current,
+      });
     }
   }, [globalAudioPlaying, isActive, startRecognition]);
   
