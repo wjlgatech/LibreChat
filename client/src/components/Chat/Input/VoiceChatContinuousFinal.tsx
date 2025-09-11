@@ -44,11 +44,16 @@ export default function VoiceChatContinuousFinal({ disabled = false }: VoiceChat
   const lastMessageIdRef = useRef<string | null>(null);
   const isActiveRef = useRef(false);
   const conversationIdRef = useRef<string | null>(null);
+  const globalAudioPlayingRef = useRef(false);
   
-  // Keep ref in sync with state
+  // Keep refs in sync with state
   useEffect(() => {
     isActiveRef.current = isActive;
   }, [isActive]);
+  
+  useEffect(() => {
+    globalAudioPlayingRef.current = globalAudioPlaying;
+  }, [globalAudioPlaying]);
   
   // Track conversation ID once it's assigned
   useEffect(() => {
@@ -109,6 +114,12 @@ export default function VoiceChatContinuousFinal({ disabled = false }: VoiceChat
         return;
       }
       
+      // Don't process results while AI is speaking
+      if (globalAudioPlayingRef.current) {
+        console.log('[VoiceContinuousFinal] Ignoring results - AI is speaking');
+        return;
+      }
+      
       let interim = '';
       
       for (let i = event.resultIndex; i < event.results.length; i++) {
@@ -130,6 +141,11 @@ export default function VoiceChatContinuousFinal({ disabled = false }: VoiceChat
         silenceTimer = setTimeout(() => {
           if (!isActiveRef.current) {
             console.log('[VoiceContinuousFinal] Not submitting - button is not active');
+            return;
+          }
+          
+          if (globalAudioPlayingRef.current) {
+            console.log('[VoiceContinuousFinal] Not submitting - AI is speaking');
             return;
           }
           
@@ -228,18 +244,40 @@ export default function VoiceChatContinuousFinal({ disabled = false }: VoiceChat
       });
       lastMessageIdRef.current = latestMessage.messageId;
       
-      // Try to resume after a delay
-      setTimeout(() => {
-        console.log('[VoiceContinuousFinal] Attempting to resume recognition...');
-        console.log('[VoiceContinuousFinal] Conversation before resume:', conversation?.conversationId);
-        if (isActiveRef.current && !recognitionRef.current) {
-          startRecognition();
-        } else {
-          console.log('[VoiceContinuousFinal] Cannot resume - active:', isActiveRef.current, 'recognition:', !!recognitionRef.current);
-        }
-      }, 1000);
+      // Stop recognition when AI starts responding to prevent overlap
+      if (recognitionRef.current) {
+        console.log('[VoiceContinuousFinal] Stopping recognition for AI response');
+        recognitionRef.current.abort();
+        recognitionRef.current = null;
+      }
     }
-  }, [latestMessage, isActive, startRecognition, conversation]);
+  }, [latestMessage, isActive, conversation]);
+  
+  // Monitor audio playback state and manage recognition accordingly
+  useEffect(() => {
+    console.log('[VoiceContinuousFinal] Audio playback state:', {
+      globalAudioPlaying,
+      isActive,
+      hasRecognition: !!recognitionRef.current,
+    });
+    
+    if (!isActive) return;
+    
+    if (globalAudioPlaying && recognitionRef.current) {
+      // Pause recognition while AI is speaking
+      console.log('[VoiceContinuousFinal] Pausing recognition - AI is speaking');
+      recognitionRef.current.abort();
+      recognitionRef.current = null;
+    } else if (!globalAudioPlaying && !recognitionRef.current && isActiveRef.current) {
+      // Resume recognition after AI finishes speaking
+      console.log('[VoiceContinuousFinal] Resuming recognition - AI finished speaking');
+      setTimeout(() => {
+        if (isActiveRef.current && !recognitionRef.current && !globalAudioPlaying) {
+          startRecognition();
+        }
+      }, 500); // Small delay to ensure audio has fully stopped
+    }
+  }, [globalAudioPlaying, isActive, startRecognition]);
   
   // Toggle active state
   const toggle = useCallback(() => {
