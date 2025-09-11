@@ -18,6 +18,31 @@ const logDebugMessage = (req, message) =>
 // TODO: test caching
 router.post('/', async (req, res) => {
   try {
+    console.log('[TTS Route] Request received:', {
+      hasUser: !!req.user,
+      userId: req.user?.id,
+      userName: req.user?.username,
+      userKeys: req.user ? Object.keys(req.user) : [],
+      authHeader: req.headers.authorization ? req.headers.authorization.substring(0, 30) + '...' : 'none',
+      hasCookies: !!req.headers.cookie,
+      messageId: req.body.messageId,
+      runId: req.body.runId,
+      voice: req.body.voice,
+    });
+    
+    if (!req.user?.id) {
+      logger.error('[TTS Route] User not authenticated - Details:', {
+        hasUser: !!req.user,
+        userObject: req.user,
+        headers: {
+          authorization: req.headers.authorization ? 'present' : 'missing',
+          cookie: req.headers.cookie ? 'present' : 'missing',
+          contentType: req.headers['content-type']
+        }
+      });
+      return res.status(401).json({ error: 'User not authenticated' });
+    }
+    
     const audioRunsCache = getLogStores(CacheKeys.AUDIO_RUNS);
     const audioRun = await audioRunsCache.get(req.body.runId);
     logDebugMessage(req, 'start stream audio');
@@ -26,12 +51,24 @@ router.post('/', async (req, res) => {
       return res.status(401).json({ error: 'Audio stream already running' });
     }
     audioRunsCache.set(req.body.runId, true);
+    
+    // streamAudio handles the response, don't call res.end() here
     await streamAudio(req, res);
     logDebugMessage(req, 'end stream audio');
-    res.status(200).end();
   } catch (error) {
-    logger.error(`[streamAudio] user: ${req.user.id} | Failed to stream audio: ${error}`);
-    res.status(500).json({ error: 'Failed to stream audio' });
+    logger.error(`[streamAudio] user: ${req.user?.id ?? 'UNDEFINED'} | Failed to stream audio:`, error);
+    console.error('[streamAudio] Full error:', error);
+    console.error('[streamAudio] Error stack:', error.stack);
+    
+    // Clean up the audio run cache on error
+    if (req.body.runId) {
+      const audioRunsCache = getLogStores(CacheKeys.AUDIO_RUNS);
+      audioRunsCache.delete(req.body.runId);
+    }
+    
+    if (!res.headersSent) {
+      res.status(500).json({ error: 'Failed to stream audio', details: error.message });
+    }
   }
 });
 

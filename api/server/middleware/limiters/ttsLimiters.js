@@ -63,7 +63,11 @@ const createTTSLimiters = () => {
     handler: createTTSHandler(false),
     store: limiterCache('tts_user_limiter'),
     keyGenerator: function (req) {
-      return req.user?.id; // Use the user ID or NULL if not available
+      if (!req.user?.id) {
+        console.log('[TTS User Limiter] No user ID found, using IP as fallback');
+        return req.ip || 'anonymous';
+      }
+      return req.user.id;
     },
   };
 

@@ -352,24 +352,50 @@ class TTSService {
    * @returns {Promise<void>}
    */
   async streamAudio(req, res) {
-    res.setHeader('Content-Type', 'audio/mpeg');
-    const appConfig =
-      req.config ??
-      (await getAppConfig({
-        role: req.user?.role,
-      }));
-    const provider = this.getProvider(appConfig);
-    const ttsSchema = appConfig?.speech?.tts?.[provider];
-    const voice = await this.getVoice(ttsSchema, req.body.voice);
+    try {
+      logger.debug('[TTSService.streamAudio] Starting audio stream', {
+        userId: req.user?.id,
+        messageId: req.body.messageId,
+        runId: req.body.runId,
+      });
+      
+      res.setHeader('Content-Type', 'audio/mpeg');
+      const appConfig =
+        req.config ??
+        (await getAppConfig({
+          role: req.user?.role,
+        }));
+      
+      logger.debug('[TTSService.streamAudio] Got app config', {
+        hasSpeechConfig: !!appConfig?.speech,
+        hasTTSConfig: !!appConfig?.speech?.tts,
+      });
+      
+      const provider = this.getProvider(appConfig);
+      logger.debug('[TTSService.streamAudio] Got provider:', provider);
+      
+      const ttsSchema = appConfig?.speech?.tts?.[provider];
+      if (!ttsSchema) {
+        throw new Error(`No TTS schema found for provider: ${provider}`);
+      }
+      
+      const voice = await this.getVoice(ttsSchema, req.body.voice);
+      logger.debug('[TTSService.streamAudio] Got voice:', voice);
 
-    let shouldContinue = true;
+      let shouldContinue = true;
 
-    req.on('close', () => {
-      logger.warn('[streamAudio] Audio Stream Request closed by client');
-      shouldContinue = false;
-    });
+      req.on('close', () => {
+        logger.warn('[streamAudio] Audio Stream Request closed by client');
+        shouldContinue = false;
+      });
 
-    const processChunks = createChunkProcessor(req.user.id, req.body.messageId);
+      // Check if user exists before using user.id
+      if (!req.user?.id) {
+        logger.error('[TTSService.streamAudio] User not authenticated or user ID missing');
+        return res.status(401).json({ error: 'User not authenticated' });
+      }
+      
+      const processChunks = createChunkProcessor(req.user.id, req.body.messageId);
 
     try {
       while (shouldContinue) {
@@ -428,6 +454,16 @@ class TTSService {
       if (!res.headersSent) {
         res.status(500).end();
       }
+    }
+    } catch (error) {
+      logger.error('[TTSService.streamAudio] Error in streamAudio:', {
+        error: error.message,
+        stack: error.stack,
+        userId: req.user?.id,
+        messageId: req.body.messageId,
+        runId: req.body.runId,
+      });
+      throw error; // Re-throw to be caught by route handler
     }
   }
 }

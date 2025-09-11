@@ -73,28 +73,17 @@ function createChunkProcessor(user, messageId) {
    */
   async function processChunks() {
     if (notFoundCount >= MAX_NOT_FOUND_COUNT) {
-      console.error(`[TTS streamAudio] Message not found after ${MAX_NOT_FOUND_COUNT} attempts for messageId: ${messageId}`);
       return `Message not found after ${MAX_NOT_FOUND_COUNT} attempts`;
     }
 
     if (noChangeCount >= MAX_NO_CHANGE_COUNT) {
-      console.error(`[TTS streamAudio] No change in message after ${MAX_NO_CHANGE_COUNT} attempts for messageId: ${messageId}`);
       return `No change in message after ${MAX_NO_CHANGE_COUNT} attempts`;
     }
 
-    console.log(`[TTS streamAudio] Processing chunks for user: ${user}, messageId: ${messageId}`);
-    
     /** @type { string | { text: string; complete: boolean } } */
     let message = await messageCache.get(messageId);
-    console.log(`[TTS streamAudio] Message from cache:`, message ? 'found' : 'not found');
-    
     if (!message) {
-      console.log(`[TTS streamAudio] Getting message from database for messageId: ${messageId}`);
       message = await getMessage({ user, messageId });
-      console.log(`[TTS streamAudio] Message from database:`, message ? 'found' : 'not found');
-      if (message) {
-        console.log(`[TTS streamAudio] Message text length: ${message.text?.length || 0}`);
-      }
     }
 
     if (!message) {
