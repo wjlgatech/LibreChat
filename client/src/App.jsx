@@ -10,6 +10,9 @@ import { ScreenshotProvider, useApiErrorBoundary } from './hooks';
 import { getThemeFromEnv } from './utils/getThemeFromEnv';
 import { LiveAnnouncer } from '~/a11y';
 import { router } from './routes';
+import TTSDebugIndicator from './components/Debug/TTSDebugIndicator';
+// Import TTS test for debugging
+import './utils/testTTSAuth';
 
 const App = () => {
   const { setError } = useApiErrorBoundary();
@@ -47,6 +50,7 @@ const App = () => {
                   <RouterProvider router={router} />
                   <ReactQueryDevtools initialIsOpen={false} position="top-right" />
                   <Toast />
+                  {process.env.NODE_ENV === 'development' && <TTSDebugIndicator />}
                   <RadixToast.Viewport className="pointer-events-none fixed inset-0 z-[1000] mx-auto my-2 flex max-w-[560px] flex-col items-stretch justify-start md:pb-5" />
                 </DndProvider>
               </ToastProvider>

@@ -8,14 +8,6 @@ const {
 const { getMessage } = require('~/models/Message');
 const { getLogStores } = require('~/cache');
 
-/**
- * @param {string[]} voiceIds - Array of voice IDs
- * @returns {string}
- */
-function getRandomVoiceId(voiceIds) {
-  const randomIndex = Math.floor(Math.random() * voiceIds.length);
-  return voiceIds[randomIndex];
-}
 
 /**
  * @typedef {Object} VoiceSettings
@@ -73,36 +65,60 @@ function createChunkProcessor(user, messageId) {
    */
   async function processChunks() {
     if (notFoundCount >= MAX_NOT_FOUND_COUNT) {
+      console.error(`[streamAudio] Message not found after ${MAX_NOT_FOUND_COUNT} attempts - messageId: ${messageId}, user: ${user}`);
       return `Message not found after ${MAX_NOT_FOUND_COUNT} attempts`;
     }
 
     if (noChangeCount >= MAX_NO_CHANGE_COUNT) {
+      console.log(`[streamAudio] No change in message after ${MAX_NO_CHANGE_COUNT} attempts - returning`);
       return `No change in message after ${MAX_NO_CHANGE_COUNT} attempts`;
     }
 
     /** @type { string | { text: string; complete: boolean } } */
     let message = await messageCache.get(messageId);
     if (!message) {
+      // Try to get message with user ID first
       message = await getMessage({ user, messageId });
+      
+      // If not found, try without user ID (for shared messages or system messages)
+      if (!message) {
+        console.log(`[streamAudio] Message not found with user ${user}, trying without user filter...`);
+        message = await getMessage({ messageId });
+      }
     }
 
     if (!message) {
       notFoundCount++;
+      console.log(`[streamAudio] Message not found (attempt ${notFoundCount}/${MAX_NOT_FOUND_COUNT}) - messageId: ${messageId}`);
+      // Wait a bit longer on first attempts to handle race conditions
+      if (notFoundCount <= 2) {
+        await new Promise(resolve => setTimeout(resolve, 500));
+      }
       return [];
     } else {
       const text = message.content?.length > 0 ? parseTextParts(message.content) : message.text;
-      messageCache.set(
-        messageId,
-        {
-          text,
-          complete: true,
-        },
-        Time.FIVE_MINUTES,
-      );
+      // Only cache if we have valid text
+      if (text && text.length > 0) {
+        messageCache.set(
+          messageId,
+          {
+            text,
+            complete: true,
+          },
+          Time.FIVE_MINUTES,
+        );
+      }
     }
 
-    const text = typeof message === 'string' ? message : message.text;
+    const text = typeof message === 'string' ? message : (message.content?.length > 0 ? parseTextParts(message.content) : message.text);
     const complete = typeof message === 'string' ? false : (message.complete ?? true);
+
+    // Handle case where text is still undefined
+    if (!text || text === undefined) {
+      console.log(`[streamAudio] Message has no text content yet - messageId: ${messageId}`);
+      notFoundCount++;
+      return [];
+    }
 
     if (text === processedText) {
       noChangeCount++;
@@ -208,5 +224,4 @@ module.exports = {
   createChunkProcessor,
   splitTextIntoChunks,
   llmMessageSource,
-  getRandomVoiceId,
 };

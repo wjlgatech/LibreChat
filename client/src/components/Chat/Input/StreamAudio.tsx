@@ -85,6 +85,18 @@ export default function StreamAudio({ index = 0 }) {
     console.log('[StreamAudio] shouldFetch:', shouldFetch);
 
     if (!shouldFetch) {
+      // Log why not fetching for debugging
+      if (!token) console.log('[StreamAudio] Not fetching: No token');
+      if (!automaticPlayback) console.log('[StreamAudio] Not fetching: automaticPlayback is false');
+      if (isSubmitting) console.log('[StreamAudio] Not fetching: isSubmitting');
+      if (!latestMessage) console.log('[StreamAudio] Not fetching: No latestMessage');
+      if (latestMessage?.isCreatedByUser) console.log('[StreamAudio] Not fetching: Message is from user');
+      if (!latestText) console.log('[StreamAudio] Not fetching: No latestText');
+      if (!latestMessage?.messageId) console.log('[StreamAudio] Not fetching: No messageId');
+      if (latestMessage?.messageId?.includes('_')) console.log('[StreamAudio] Not fetching: MessageId has underscore');
+      if (isFetching) console.log('[StreamAudio] Not fetching: Already fetching');
+      if (activeRunId == null) console.log('[StreamAudio] Not fetching: No activeRunId');
+      if (activeRunId === audioRunId) console.log('[StreamAudio] Not fetching: activeRunId matches audioRunId');
       return;
     }
 
@@ -117,6 +129,30 @@ export default function StreamAudio({ index = 0 }) {
         console.log('[StreamAudio] TTS Request:', requestPayload);
         console.log('[StreamAudio] TTS Headers:', { 'Content-Type': 'application/json', Authorization: `Bearer ${token?.substring(0, 10)}...` });
         
+        // Auto-start debugging if not already running
+        if (process.env.NODE_ENV === 'development' && (window as any).ttsDebug && !(window as any).ttsDebugActive) {
+          console.log('[StreamAudio] Auto-starting TTS debug helper...');
+          (window as any).ttsDebugActive = true;
+          (window as any).ttsDebug.startDebugging().catch(console.error);
+          
+          // Schedule auto-analysis after 10 seconds
+          setTimeout(async () => {
+            if ((window as any).ttsDebugActive) {
+              console.log('[StreamAudio] Auto-analyzing TTS debug data...');
+              const results = await (window as any).ttsDebug.stopAndAnalyze();
+              (window as any).ttsDebugActive = false;
+              
+              // Try to copy to clipboard
+              try {
+                await (window as any).ttsDebug.copyToClipboard();
+                console.log('[StreamAudio] TTS debug report copied to clipboard automatically!');
+              } catch (e) {
+                console.log('[StreamAudio] TTS debug report available at window.ttsDebug.getLastDebugData()');
+              }
+            }
+          }, 10000);
+        }
+        
         const response = await fetch('/api/files/speech/tts', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
@@ -132,6 +168,14 @@ export default function StreamAudio({ index = 0 }) {
           try {
             const errorText = await response.text();
             console.error('[StreamAudio] TTS Error Body:', errorText);
+            
+            // Try to parse as JSON for detailed error
+            try {
+              const errorData = JSON.parse(errorText);
+              console.error('[StreamAudio] TTS Error Details:', errorData);
+            } catch {
+              // Not JSON, already logged as text
+            }
           } catch (e) {
             console.error('[StreamAudio] Could not read error body:', e);
           }

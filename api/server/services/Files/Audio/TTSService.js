@@ -2,7 +2,7 @@ const axios = require('axios');
 const { logger } = require('@librechat/data-schemas');
 const { genAzureEndpoint } = require('@librechat/api');
 const { extractEnvVariable, TTSProviders } = require('librechat-data-provider');
-const { getRandomVoiceId, createChunkProcessor, splitTextIntoChunks } = require('./streamAudio');
+const { createChunkProcessor, splitTextIntoChunks } = require('./streamAudio');
 const { getAppConfig } = require('~/server/services/Config');
 
 /**
@@ -71,7 +71,14 @@ class TTSService {
     const voices = providerSchema.voices.filter((voice) => voice && voice.toUpperCase() !== 'ALL');
     let voice = requestVoice;
     if (!voice || !voices.includes(voice) || (voice.toUpperCase() === 'ALL' && voices.length > 1)) {
-      voice = getRandomVoiceId(voices);
+      // Use defaultVoice from config if available, otherwise use first voice in the list
+      voice = providerSchema.defaultVoice || voices[0];
+      
+      // Fallback to first voice if defaultVoice is not in the available voices
+      if (!voices.includes(voice)) {
+        logger.warn(`[TTSService.getVoice] Default voice "${voice}" not in available voices, using first voice: ${voices[0]}`);
+        voice = voices[0];
+      }
     }
     return voice;
   }

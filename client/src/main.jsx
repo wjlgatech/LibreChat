@@ -8,6 +8,16 @@ import { ApiErrorBoundaryProvider } from './hooks/ApiErrorBoundaryContext';
 import 'katex/dist/katex.min.css';
 import 'katex/dist/contrib/copy-tex.js';
 
+// Development debugging tools
+if (process.env.NODE_ENV === 'development') {
+  import('./utils/ttsDebugHelper').catch(() => {
+    console.log('TTS Debug Helper not available');
+  });
+  import('./utils/serverLogCapture').catch(() => {
+    console.log('Server Log Capture not available');
+  });
+}
+
 const container = document.getElementById('root');
 const root = createRoot(container);
 
