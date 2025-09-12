@@ -1,0 +1,519 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Voice AI - Complete Pipeline Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+        }
+        .panel {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .full-width {
+            grid-column: span 2;
+        }
+        h1, h2 {
+            color: #333;
+        }
+        button {
+            padding: 10px 20px;
+            margin: 5px;
+            border: none;
+            border-radius: 4px;
+            font-size: 16px;
+            cursor: pointer;
+            background-color: #007bff;
+            color: white;
+        }
+        button:hover:not(:disabled) {
+            background-color: #0056b3;
+        }
+        button:disabled {
+            background-color: #6c757d;
+            cursor: not-allowed;
+        }
+        .success {
+            background-color: #28a745;
+        }
+        .danger {
+            background-color: #dc3545;
+        }
+        .metrics {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 10px;
+            margin-top: 20px;
+        }
+        .metric {
+            text-align: center;
+            padding: 10px;
+            background-color: #f8f9fa;
+            border-radius: 4px;
+        }
+        .metric-value {
+            font-size: 24px;
+            font-weight: bold;
+            color: #007bff;
+        }
+        .metric-label {
+            font-size: 14px;
+            color: #6c757d;
+        }
+        #conversation {
+            max-height: 400px;
+            overflow-y: auto;
+            padding: 10px;
+            background-color: #f8f9fa;
+            border-radius: 4px;
+        }
+        .turn {
+            margin-bottom: 15px;
+            padding: 10px;
+            border-radius: 4px;
+            background-color: white;
+        }
+        .user-message {
+            color: #007bff;
+            margin-bottom: 5px;
+        }
+        .ai-message {
+            color: #28a745;
+        }
+        .timestamp {
+            font-size: 12px;
+            color: #6c757d;
+        }
+        #audioVisualizer {
+            width: 100%;
+            height: 100px;
+            background-color: #1a1a1a;
+            border-radius: 4px;
+            margin: 10px 0;
+        }
+        textarea {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            resize: vertical;
+        }
+        select {
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            margin: 5px;
+        }
+        .status {
+            padding: 10px;
+            border-radius: 4px;
+            margin-bottom: 10px;
+        }
+        .status.info {
+            background-color: #d1ecf1;
+            color: #0c5460;
+        }
+        .status.error {
+            background-color: #f8d7da;
+            color: #721c24;
+        }
+        .status.success {
+            background-color: #d4edda;
+            color: #155724;
+        }
+    </style>
+</head>
+<body>
+    <h1>🎤 Voice AI - Complete Pipeline Test</h1>
+    
+    <div id="status" class="status info full-width">
+        Ready to start Voice AI session
+    </div>
+
+    <div class="container">
+        <!-- Control Panel -->
+        <div class="panel">
+            <h2>🎮 Control Panel</h2>
+            
+            <div>
+                <h3>Session Controls</h3>
+                <button id="startSessionBtn" onclick="startSession()">🚀 Start Session</button>
+                <button id="stopSessionBtn" onclick="stopSession()" disabled>🛑 Stop Session</button>
+                <button id="clearHistoryBtn" onclick="clearHistory()">🗑️ Clear History</button>
+            </div>
+
+            <div style="margin-top: 20px;">
+                <h3>Test Pipeline</h3>
+                <textarea id="testInput" placeholder="Type a message to test the complete pipeline..." rows="3">Hello! How are you today?</textarea>
+                <button onclick="testPipeline()">🧪 Test Pipeline</button>
+            </div>
+
+            <div style="margin-top: 20px;">
+                <h3>Configuration</h3>
+                <label>Voice:</label>
+                <select id="voiceSelect">
+                    <option value="alloy">Alloy</option>
+                    <option value="echo">Echo</option>
+                    <option value="fable">Fable</option>
+                    <option value="onyx">Onyx</option>
+                    <option value="nova">Nova</option>
+                    <option value="shimmer">Shimmer</option>
+                </select>
+                
+                <label>Language:</label>
+                <select id="languageSelect">
+                    <option value="en">English</option>
+                    <option value="es">Spanish</option>
+                    <option value="fr">French</option>
+                    <option value="de">German</option>
+                    <option value="ja">Japanese</option>
+                </select>
+            </div>
+
+            <canvas id="audioVisualizer"></canvas>
+        </div>
+
+        <!-- Metrics Panel -->
+        <div class="panel">
+            <h2>📊 Performance Metrics</h2>
+            
+            <div class="metrics">
+                <div class="metric">
+                    <div class="metric-value" id="sttLatency">-</div>
+                    <div class="metric-label">STT Latency</div>
+                </div>
+                <div class="metric">
+                    <div class="metric-value" id="llmLatency">-</div>
+                    <div class="metric-label">LLM Latency</div>
+                </div>
+                <div class="metric">
+                    <div class="metric-value" id="ttsLatency">-</div>
+                    <div class="metric-label">TTS Latency</div>
+                </div>
+                <div class="metric">
+                    <div class="metric-value" id="totalLatency">-</div>
+                    <div class="metric-label">Total Latency</div>
+                </div>
+            </div>
+
+            <div style="margin-top: 20px;">
+                <h3>Session Stats</h3>
+                <p>Session ID: <span id="sessionId">-</span></p>
+                <p>Active Sessions: <span id="activeSessions">0</span></p>
+                <p>Total Turns: <span id="totalTurns">0</span></p>
+                <p>Session Duration: <span id="sessionDuration">0s</span></p>
+            </div>
+
+            <div style="margin-top: 20px;">
+                <h3>Health Status</h3>
+                <p>TTS: <span id="ttsHealth">⚪</span></p>
+                <p>STT: <span id="sttHealth">⚪</span></p>
+                <p>Orchestrator: <span id="orchHealth">⚪</span></p>
+            </div>
+        </div>
+
+        <!-- Conversation History -->
+        <div class="panel full-width">
+            <h2>💬 Conversation History</h2>
+            <div id="conversation"></div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = 'http://localhost:3000/api';
+        let currentSessionId = null;
+        let sessionTimer = null;
+        let sessionStartTime = null;
+
+        function log(message, type = 'info') {
+            console.log(`[${type.toUpperCase()}] ${message}`);
+        }
+
+        function setStatus(message, type = 'info') {
+            const status = document.getElementById('status');
+            status.textContent = message;
+            status.className = `status ${type} full-width`;
+        }
+
+        async function checkHealth() {
+            try {
+                // Check all services
+                const [ttsHealth, sttHealth, orchHealth] = await Promise.all([
+                    fetch(`${API_BASE}/tts/health`).then(r => r.json()),
+                    fetch(`${API_BASE}/stt/health`).then(r => r.json()),
+                    fetch(`${API_BASE}/orchestrator/health`).then(r => r.json()),
+                ]);
+
+                document.getElementById('ttsHealth').textContent = ttsHealth.status === 'healthy' ? '✅' : '❌';
+                document.getElementById('sttHealth').textContent = sttHealth.status === 'healthy' ? '✅' : '❌';
+                document.getElementById('orchHealth').textContent = orchHealth.status === 'healthy' ? '✅' : '❌';
+
+                // Update active sessions
+                document.getElementById('activeSessions').textContent = orchHealth.activeSessions || 0;
+
+                return ttsHealth.status === 'healthy' && 
+                       sttHealth.status === 'healthy' && 
+                       orchHealth.status === 'healthy';
+            } catch (error) {
+                log('Health check failed: ' + error.message, 'error');
+                return false;
+            }
+        }
+
+        async function startSession() {
+            try {
+                setStatus('Starting Voice AI session...', 'info');
+                
+                const voice = document.getElementById('voiceSelect').value;
+                const language = document.getElementById('languageSelect').value;
+
+                const response = await fetch(`${API_BASE}/orchestrator/session/start`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        voice,
+                        language,
+                        streamingMode: true,
+                    }),
+                });
+
+                const data = await response.json();
+                
+                if (response.ok) {
+                    currentSessionId = data.sessionId;
+                    sessionStartTime = Date.now();
+                    document.getElementById('sessionId').textContent = currentSessionId;
+                    document.getElementById('startSessionBtn').disabled = true;
+                    document.getElementById('stopSessionBtn').disabled = false;
+                    
+                    // Start session timer
+                    sessionTimer = setInterval(updateSessionTimer, 1000);
+                    
+                    setStatus('Voice AI session started! Ready for voice input.', 'success');
+                    log('Session started: ' + currentSessionId, 'success');
+                    
+                    // In a real implementation, you would now:
+                    // 1. Start capturing microphone audio
+                    // 2. Connect to WebRTC/WebSocket for streaming
+                    // 3. Send audio to the orchestrator
+                    
+                } else {
+                    throw new Error(data.error || 'Failed to start session');
+                }
+            } catch (error) {
+                setStatus('Failed to start session: ' + error.message, 'error');
+                log('Start session error: ' + error.message, 'error');
+            }
+        }
+
+        async function stopSession() {
+            if (!currentSessionId) return;
+
+            try {
+                const response = await fetch(`${API_BASE}/orchestrator/session/${currentSessionId}/stop`, {
+                    method: 'POST',
+                });
+
+                const data = await response.json();
+                
+                if (response.ok) {
+                    setStatus('Session stopped successfully', 'success');
+                    log(`Session stopped. Duration: ${data.sessionDuration}ms, Turns: ${data.totalTurns}`, 'info');
+                    
+                    // Update metrics with averages
+                    if (data.averageLatencies) {
+                        document.getElementById('sttLatency').textContent = `${data.averageLatencies.stt}ms`;
+                        document.getElementById('llmLatency').textContent = `${data.averageLatencies.llm}ms`;
+                        document.getElementById('ttsLatency').textContent = `${data.averageLatencies.tts}ms`;
+                        document.getElementById('totalLatency').textContent = `${data.averageLatencies.total}ms`;
+                    }
+                } else {
+                    throw new Error(data.error || 'Failed to stop session');
+                }
+            } catch (error) {
+                setStatus('Failed to stop session: ' + error.message, 'error');
+            } finally {
+                // Reset UI
+                currentSessionId = null;
+                clearInterval(sessionTimer);
+                document.getElementById('startSessionBtn').disabled = false;
+                document.getElementById('stopSessionBtn').disabled = true;
+                document.getElementById('sessionId').textContent = '-';
+            }
+        }
+
+        async function testPipeline() {
+            try {
+                const text = document.getElementById('testInput').value;
+                const voice = document.getElementById('voiceSelect').value;
+                const language = document.getElementById('languageSelect').value;
+
+                if (!text) {
+                    setStatus('Please enter text to test', 'error');
+                    return;
+                }
+
+                setStatus('Testing pipeline...', 'info');
+                
+                const response = await fetch(`${API_BASE}/orchestrator/test`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ text, voice, language }),
+                });
+
+                const data = await response.json();
+                
+                if (response.ok) {
+                    // Update metrics
+                    document.getElementById('llmLatency').textContent = data.latencies.llm;
+                    document.getElementById('ttsLatency').textContent = data.latencies.tts;
+                    document.getElementById('totalLatency').textContent = data.latencies.total;
+                    
+                    // Add to conversation
+                    addToConversation(text, data.aiResponse, data.latencies.total);
+                    
+                    setStatus(`Pipeline test complete! Total latency: ${data.latencies.total}`, 'success');
+                    log('Pipeline test successful', 'success');
+                } else {
+                    throw new Error(data.error || 'Pipeline test failed');
+                }
+            } catch (error) {
+                setStatus('Pipeline test error: ' + error.message, 'error');
+                log('Pipeline test error: ' + error.message, 'error');
+            }
+        }
+
+        async function getSessionHistory() {
+            if (!currentSessionId) return;
+
+            try {
+                const response = await fetch(`${API_BASE}/orchestrator/session/${currentSessionId}/history`);
+                const data = await response.json();
+                
+                if (response.ok) {
+                    // Update conversation display
+                    const conversation = document.getElementById('conversation');
+                    conversation.innerHTML = '';
+                    
+                    data.history.forEach(turn => {
+                        addToConversation(turn.userInput, turn.aiResponse, turn.totalLatency);
+                    });
+                    
+                    document.getElementById('totalTurns').textContent = data.turns;
+                    
+                    // Update average latencies
+                    if (data.averageLatencies) {
+                        document.getElementById('sttLatency').textContent = `${data.averageLatencies.stt}ms`;
+                        document.getElementById('llmLatency').textContent = `${data.averageLatencies.llm}ms`;
+                        document.getElementById('ttsLatency').textContent = `${data.averageLatencies.tts}ms`;
+                        document.getElementById('totalLatency').textContent = `${data.averageLatencies.total}ms`;
+                    }
+                }
+            } catch (error) {
+                log('Failed to get history: ' + error.message, 'error');
+            }
+        }
+
+        function addToConversation(userText, aiText, latency) {
+            const conversation = document.getElementById('conversation');
+            const turn = document.createElement('div');
+            turn.className = 'turn';
+            
+            const timestamp = new Date().toLocaleTimeString();
+            turn.innerHTML = `
+                <div class="user-message">👤 User: ${userText}</div>
+                <div class="ai-message">🤖 AI: ${aiText}</div>
+                <div class="timestamp">⏱️ ${timestamp} - Latency: ${latency || '-'}</div>
+            `;
+            
+            conversation.appendChild(turn);
+            conversation.scrollTop = conversation.scrollHeight;
+            
+            // Update turn count
+            const currentTurns = parseInt(document.getElementById('totalTurns').textContent) || 0;
+            document.getElementById('totalTurns').textContent = currentTurns + 1;
+        }
+
+        function clearHistory() {
+            document.getElementById('conversation').innerHTML = '';
+            document.getElementById('totalTurns').textContent = '0';
+            setStatus('Conversation history cleared', 'info');
+        }
+
+        function updateSessionTimer() {
+            if (sessionStartTime) {
+                const duration = Math.floor((Date.now() - sessionStartTime) / 1000);
+                document.getElementById('sessionDuration').textContent = `${duration}s`;
+            }
+        }
+
+        // Initialize audio visualizer
+        function initAudioVisualizer() {
+            const canvas = document.getElementById('audioVisualizer');
+            const ctx = canvas.getContext('2d');
+            canvas.width = canvas.offsetWidth;
+            canvas.height = 100;
+
+            // Simple waveform animation placeholder
+            function draw() {
+                ctx.fillStyle = '#1a1a1a';
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+                
+                ctx.strokeStyle = '#00ff00';
+                ctx.beginPath();
+                
+                const centerY = canvas.height / 2;
+                for (let x = 0; x < canvas.width; x++) {
+                    const y = centerY + Math.sin((x + Date.now() * 0.002) * 0.02) * 20;
+                    if (x === 0) {
+                        ctx.moveTo(x, y);
+                    } else {
+                        ctx.lineTo(x, y);
+                    }
+                }
+                
+                ctx.stroke();
+                requestAnimationFrame(draw);
+            }
+            
+            draw();
+        }
+
+        // Initialize on load
+        window.onload = async () => {
+            initAudioVisualizer();
+            
+            // Check health of all services
+            const healthy = await checkHealth();
+            if (healthy) {
+                setStatus('All services healthy! Ready to start.', 'success');
+            } else {
+                setStatus('Some services are not healthy. Check API keys in .env file.', 'error');
+            }
+            
+            // Refresh health status every 10 seconds
+            setInterval(checkHealth, 10000);
+            
+            // Refresh session history if active
+            setInterval(() => {
+                if (currentSessionId) {
+                    getSessionHistory();
+                }
+            }, 2000);
+        };
+    </script>
+</body>
+</html>

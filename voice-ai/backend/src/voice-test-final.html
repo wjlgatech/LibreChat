@@ -1,0 +1,444 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Voice AI - Final Working Version</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      max-width: 900px;
+      margin: 0 auto;
+      padding: 20px;
+      background: #f0f0f0;
+    }
+    .container {
+      background: white;
+      padding: 30px;
+      border-radius: 12px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+    }
+    h1 {
+      text-align: center;
+      color: #333;
+      margin-bottom: 30px;
+    }
+    .status-card {
+      background: #f8f9fa;
+      border-left: 4px solid #6c757d;
+      padding: 15px 20px;
+      margin: 20px 0;
+      border-radius: 4px;
+      font-weight: 500;
+    }
+    .status-card.success {
+      background: #d4edda;
+      border-color: #28a745;
+      color: #155724;
+    }
+    .status-card.error {
+      background: #f8d7da;
+      border-color: #dc3545;
+      color: #721c24;
+    }
+    .status-card.active {
+      background: #cce5ff;
+      border-color: #007bff;
+      color: #004085;
+    }
+    .button-group {
+      display: flex;
+      gap: 10px;
+      justify-content: center;
+      margin: 30px 0;
+    }
+    button {
+      padding: 12px 24px;
+      font-size: 16px;
+      font-weight: 500;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    button:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+    .btn-primary {
+      background: #007bff;
+      color: white;
+    }
+    .btn-primary:hover:not(:disabled) {
+      background: #0056b3;
+    }
+    .btn-success {
+      background: #28a745;
+      color: white;
+    }
+    .btn-success:hover:not(:disabled) {
+      background: #218838;
+    }
+    .btn-danger {
+      background: #dc3545;
+      color: white;
+    }
+    .btn-danger:hover:not(:disabled) {
+      background: #c82333;
+    }
+    .message-box {
+      padding: 20px;
+      margin: 15px 0;
+      border-radius: 8px;
+      min-height: 60px;
+    }
+    .user-message {
+      background: #e3f2fd;
+      border: 1px solid #90caf9;
+    }
+    .ai-message {
+      background: #f3e5f5;
+      border: 1px solid #ce93d8;
+    }
+    .log {
+      background: #263238;
+      color: #aed581;
+      padding: 15px;
+      border-radius: 6px;
+      font-family: 'Monaco', 'Consolas', monospace;
+      font-size: 12px;
+      max-height: 300px;
+      overflow-y: auto;
+      margin-top: 20px;
+    }
+    .log-entry {
+      margin: 2px 0;
+    }
+    .log-error { color: #ef5350; }
+    .log-success { color: #66bb6a; }
+    .log-info { color: #42a5f5; }
+    .log-warning { color: #ffa726; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>🎙️ Voice AI - Working Demo</h1>
+    
+    <div id="status" class="status-card">
+      <strong>Status:</strong> <span id="statusText">Initializing...</span>
+    </div>
+
+    <div class="button-group">
+      <button id="step1" class="btn-primary" onclick="initializeSystem()">
+        1. Initialize System
+      </button>
+      <button id="step2" class="btn-primary" onclick="connectToServer()" disabled>
+        2. Connect to Server
+      </button>
+      <button id="step3" class="btn-success" onclick="startVoiceSession()" disabled>
+        3. Start Voice Session
+      </button>
+      <button id="stopBtn" class="btn-danger" onclick="stopSession()" disabled>
+        Stop Session
+      </button>
+    </div>
+
+    <div class="message-box user-message">
+      <strong>🎤 You:</strong>
+      <div id="userText">Waiting to start...</div>
+    </div>
+
+    <div class="message-box ai-message">
+      <strong>🤖 AI:</strong>
+      <div id="aiText">Ready to assist you...</div>
+    </div>
+
+    <h3>System Log:</h3>
+    <div class="log" id="log"></div>
+  </div>
+
+  <!-- Socket.IO -->
+  <script src="/socket.io/socket.io.js"></script>
+  
+  <script type="module">
+    // Import mediasoup-client using a working CDN
+    import * as mediasoupClient from 'https://cdn.skypack.dev/mediasoup-client@3.7.16';
+    
+    // Make it globally available
+    window.mediasoupClient = mediasoupClient;
+    
+    // Global variables
+    let socket;
+    let device;
+    let transport;
+    let producer;
+    let stream;
+
+    // Logging
+    function log(message, type = 'info') {
+      const logDiv = document.getElementById('log');
+      const entry = document.createElement('div');
+      entry.className = `log-entry log-${type}`;
+      const time = new Date().toLocaleTimeString();
+      entry.textContent = `[${time}] ${message}`;
+      logDiv.appendChild(entry);
+      logDiv.scrollTop = logDiv.scrollHeight;
+      console.log(`[${type}]`, message);
+    }
+
+    // Update status
+    function updateStatus(text, type = '') {
+      document.getElementById('statusText').textContent = text;
+      const statusDiv = document.getElementById('status');
+      statusDiv.className = `status-card ${type}`;
+    }
+
+    // Initialize system
+    window.initializeSystem = async function() {
+      try {
+        log('Initializing system...');
+        updateStatus('Checking browser compatibility...', 'active');
+        
+        // Check if we have necessary APIs
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+          throw new Error('WebRTC not supported in this browser');
+        }
+        
+        // Check if mediasoup-client loaded
+        if (!window.mediasoupClient) {
+          throw new Error('MediaSoup client not loaded');
+        }
+        
+        log('MediaSoup client loaded successfully', 'success');
+        log('Browser supports WebRTC', 'success');
+        
+        updateStatus('System initialized - Ready to connect', 'success');
+        document.getElementById('step1').disabled = true;
+        document.getElementById('step2').disabled = false;
+        
+      } catch (error) {
+        log('Initialization error: ' + error.message, 'error');
+        updateStatus('Initialization failed: ' + error.message, 'error');
+      }
+    };
+
+    // Connect to server
+    window.connectToServer = async function() {
+      try {
+        log('Connecting to server...');
+        updateStatus('Connecting to Voice AI server...', 'active');
+        
+        socket = io('http://localhost:3000', {
+          transports: ['websocket']
+        });
+
+        await new Promise((resolve, reject) => {
+          socket.on('connect', () => {
+            log('Connected! Socket ID: ' + socket.id, 'success');
+            updateStatus('Connected to server', 'success');
+            resolve();
+          });
+
+          socket.on('connect_error', (error) => {
+            reject(new Error('Connection failed: ' + error.message));
+          });
+
+          // Set timeout
+          setTimeout(() => reject(new Error('Connection timeout')), 5000);
+        });
+
+        // Set up event listeners
+        setupSocketListeners();
+        
+        document.getElementById('step2').disabled = true;
+        document.getElementById('step3').disabled = false;
+        
+      } catch (error) {
+        log('Connection error: ' + error.message, 'error');
+        updateStatus('Connection failed: ' + error.message, 'error');
+      }
+    };
+
+    // Set up socket listeners
+    function setupSocketListeners() {
+      socket.on('disconnect', () => {
+        log('Disconnected from server', 'warning');
+        updateStatus('Disconnected', 'error');
+        resetUI();
+      });
+
+      socket.on('transcription', (data) => {
+        const userDiv = document.getElementById('userText');
+        if (data.isFinal) {
+          userDiv.innerHTML = data.text;
+          log('Final transcription: ' + data.text, 'info');
+        } else {
+          userDiv.innerHTML = `<em>${data.text}...</em>`;
+        }
+      });
+
+      socket.on('ai-response', (data) => {
+        document.getElementById('aiText').innerHTML = data.text;
+        log('AI response received', 'success');
+      });
+
+      socket.on('error', (error) => {
+        log('Socket error: ' + error.message, 'error');
+      });
+    }
+
+    // Start voice session
+    window.startVoiceSession = async function() {
+      try {
+        log('Starting voice session...');
+        updateStatus('Initializing voice session...', 'active');
+
+        // Step 1: Get router capabilities
+        log('Requesting router capabilities...');
+        const routerCapabilities = await new Promise((resolve, reject) => {
+          const timeout = setTimeout(() => reject(new Error('Timeout')), 5000);
+          
+          socket.emit('get-router-rtp-capabilities');
+          socket.once('router-rtp-capabilities', (caps) => {
+            clearTimeout(timeout);
+            resolve(caps);
+          });
+        });
+        log('Received router capabilities', 'success');
+
+        // Step 2: Create device
+        log('Creating MediaSoup device...');
+        device = new mediasoupClient.Device();
+        await device.load({ routerRtpCapabilities: routerCapabilities });
+        log('Device created and loaded', 'success');
+
+        // Step 3: Get microphone
+        log('Requesting microphone access...');
+        stream = await navigator.mediaDevices.getUserMedia({
+          audio: {
+            echoCancellation: true,
+            noiseSuppression: true,
+            autoGainControl: true,
+            sampleRate: 48000
+          }
+        });
+        log('Microphone access granted', 'success');
+
+        // Step 4: Start session on server
+        log('Sending session start request...');
+        socket.emit('start-voice-session', {
+          voice: 'alloy',
+          language: 'en',
+          sttProvider: 'deepgram',
+          ttsProvider: 'openai',
+          llmModel: 'gpt-4',
+          systemPrompt: 'You are a helpful voice assistant. Keep responses brief and conversational.'
+        });
+
+        // Step 5: Wait for transport
+        const transportInfo = await new Promise((resolve, reject) => {
+          const timeout = setTimeout(() => reject(new Error('Transport timeout')), 10000);
+          socket.once('transport-created', (info) => {
+            clearTimeout(timeout);
+            resolve(info);
+          });
+        });
+        log('Transport info received', 'success');
+
+        // Step 6: Create transport
+        transport = device.createSendTransport(transportInfo);
+        log('Send transport created', 'success');
+
+        // Set up transport events
+        transport.on('connect', async ({ dtlsParameters }, callback, errback) => {
+          try {
+            socket.emit('connect-transport', { dtlsParameters });
+            socket.once('transport-connected', callback);
+          } catch (error) {
+            errback(error);
+          }
+        });
+
+        transport.on('produce', async ({ kind, rtpParameters }, callback, errback) => {
+          try {
+            socket.emit('produce', { kind, rtpParameters });
+            socket.once('produced', ({ id }) => callback({ id }));
+          } catch (error) {
+            errback(error);
+          }
+        });
+
+        // Step 7: Create producer
+        log('Creating audio producer...');
+        const track = stream.getAudioTracks()[0];
+        producer = await transport.produce({ track });
+        log('Audio producer created!', 'success');
+
+        updateStatus('Voice session active - Speak now!', 'success');
+        document.getElementById('step3').disabled = true;
+        document.getElementById('stopBtn').disabled = false;
+        document.getElementById('userText').innerHTML = '<em>Listening...</em>';
+
+      } catch (error) {
+        log('Session error: ' + error.message, 'error');
+        updateStatus('Failed: ' + error.message, 'error');
+        
+        // Clean up on error
+        if (stream) {
+          stream.getTracks().forEach(t => t.stop());
+          stream = null;
+        }
+      }
+    };
+
+    // Stop session
+    window.stopSession = function() {
+      try {
+        log('Stopping session...');
+        
+        if (socket) {
+          socket.emit('stop-voice-session');
+        }
+        
+        if (producer) {
+          producer.close();
+          producer = null;
+        }
+        
+        if (transport) {
+          transport.close();
+          transport = null;
+        }
+        
+        if (stream) {
+          stream.getTracks().forEach(t => t.stop());
+          stream = null;
+        }
+        
+        updateStatus('Session stopped - Connected', 'success');
+        document.getElementById('step3').disabled = false;
+        document.getElementById('stopBtn').disabled = true;
+        document.getElementById('userText').innerHTML = 'Session ended';
+        
+        log('Session stopped successfully', 'success');
+        
+      } catch (error) {
+        log('Stop error: ' + error.message, 'error');
+      }
+    };
+
+    // Reset UI
+    function resetUI() {
+      document.getElementById('step1').disabled = false;
+      document.getElementById('step2').disabled = true;
+      document.getElementById('step3').disabled = true;
+      document.getElementById('stopBtn').disabled = true;
+    }
+
+    // Initialize on load
+    window.addEventListener('load', () => {
+      log('Voice AI Demo loaded');
+      log('Using MediaSoup client from Skypack CDN');
+      updateStatus('Ready - Click "Initialize System" to begin');
+    });
+  </script>
+</body>
+</html>

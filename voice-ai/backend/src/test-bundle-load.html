@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Bundle Load Test</title>
+</head>
+<body>
+  <h1>Bundle Load Test</h1>
+  <div id="results"></div>
+
+  <script src="/mediasoup-client.bundle.js"></script>
+  
+  <script>
+    const results = document.getElementById('results');
+    
+    function log(message) {
+      const p = document.createElement('p');
+      p.textContent = message;
+      results.appendChild(p);
+      console.log(message);
+    }
+    
+    log('Testing bundle load...');
+    
+    if (window.mediasoupClient) {
+      log('✅ window.mediasoupClient exists');
+      log('Type: ' + typeof window.mediasoupClient);
+      log('Keys: ' + Object.keys(window.mediasoupClient));
+      
+      if (window.mediasoupClient.Device) {
+        log('✅ Device class exists');
+        log('Device type: ' + typeof window.mediasoupClient.Device);
+        
+        try {
+          const device = new window.mediasoupClient.Device();
+          log('✅ Device instance created successfully');
+          log('Device loaded: ' + device.loaded);
+        } catch (error) {
+          log('❌ Device creation failed: ' + error.message);
+        }
+      } else {
+        log('❌ Device class not found');
+      }
+    } else {
+      log('❌ window.mediasoupClient not found');
+      log('Available globals: ' + Object.keys(window).filter(k => k.includes('media')));
+    }
+  </script>
+</body>
+</html>

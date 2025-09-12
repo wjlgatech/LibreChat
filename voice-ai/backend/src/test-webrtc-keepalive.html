@@ -1,0 +1,394 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Voice AI Test - Keep Alive Test</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      max-width: 900px;
+      margin: 0 auto;
+      padding: 20px;
+      background: #f0f0f0;
+    }
+    .container {
+      background: white;
+      padding: 30px;
+      border-radius: 12px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+    }
+    h1 {
+      text-align: center;
+      color: #333;
+    }
+    .status {
+      background: #f8f9fa;
+      border: 2px solid #dee2e6;
+      padding: 15px;
+      margin: 20px 0;
+      border-radius: 8px;
+      text-align: center;
+      font-weight: 500;
+    }
+    .status.success {
+      background: #d4edda;
+      border-color: #28a745;
+      color: #155724;
+    }
+    .status.error {
+      background: #f8d7da;
+      border-color: #dc3545;
+      color: #721c24;
+    }
+    .status.active {
+      background: #cce5ff;
+      border-color: #007bff;
+      color: #004085;
+    }
+    .controls {
+      display: flex;
+      gap: 10px;
+      justify-content: center;
+      margin: 30px 0;
+      flex-wrap: wrap;
+    }
+    button {
+      padding: 12px 24px;
+      font-size: 16px;
+      font-weight: 500;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    button:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+    .btn-primary {
+      background: #007bff;
+      color: white;
+    }
+    .btn-success {
+      background: #28a745;
+      color: white;
+    }
+    .btn-danger {
+      background: #dc3545;
+      color: white;
+    }
+    .log {
+      background: #f8f9fa;
+      border: 1px solid #dee2e6;
+      padding: 15px;
+      border-radius: 6px;
+      font-family: monospace;
+      font-size: 13px;
+      max-height: 400px;
+      overflow-y: auto;
+      margin-top: 20px;
+    }
+    .log-entry {
+      margin: 2px 0;
+      padding: 2px 0;
+    }
+    .log-success { color: #28a745; }
+    .log-error { color: #dc3545; }
+    .log-info { color: #17a2b8; }
+    .connection-timer {
+      font-size: 24px;
+      font-weight: bold;
+      text-align: center;
+      margin: 20px 0;
+      color: #007bff;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>🎙️ Voice AI Keep Alive Test</h1>
+    
+    <div id="status" class="status">
+      Ready - Click "Start Test" to begin
+    </div>
+
+    <div class="connection-timer" id="timer">
+      Connection Time: 0s
+    </div>
+
+    <div class="controls">
+      <button id="startBtn" class="btn-primary" onclick="startTest()">
+        Start Test
+      </button>
+      <button id="stopBtn" class="btn-danger" onclick="stopTest()" disabled>
+        Stop Test
+      </button>
+    </div>
+
+    <div class="log" id="log"></div>
+  </div>
+
+  <!-- Socket.IO -->
+  <script src="/socket.io/socket.io.js"></script>
+  
+  <script type="module">
+    let socket;
+    let Device;
+    let mediasoupClient;
+    let device;
+    let transport;
+    let producer;
+    let stream;
+    let startTime;
+    let timerInterval;
+
+    function log(message, type = 'info') {
+      const logDiv = document.getElementById('log');
+      const entry = document.createElement('div');
+      entry.className = `log-entry log-${type}`;
+      const time = new Date().toLocaleTimeString();
+      entry.textContent = `[${time}] ${message}`;
+      logDiv.appendChild(entry);
+      logDiv.scrollTop = logDiv.scrollHeight;
+      console.log(`[${type}]`, message);
+    }
+
+    function updateStatus(text, className = '') {
+      const status = document.getElementById('status');
+      status.textContent = text;
+      status.className = 'status ' + className;
+    }
+
+    function updateTimer() {
+      if (startTime) {
+        const elapsed = Math.floor((Date.now() - startTime) / 1000);
+        document.getElementById('timer').textContent = `Connection Time: ${elapsed}s`;
+      }
+    }
+
+    window.startTest = async function() {
+      try {
+        log('Starting keep-alive test...');
+        updateStatus('Loading mediasoup-client...', 'active');
+        
+        // Load mediasoup
+        mediasoupClient = await import('https://esm.sh/mediasoup-client@3.15.6');
+        Device = mediasoupClient.Device;
+        log('mediasoup-client loaded', 'success');
+        
+        // Connect to server
+        log('Connecting to server...');
+        socket = io('http://localhost:3000', {
+          transports: ['websocket']
+        });
+
+        socket.on('connect', async () => {
+          log('Connected! Socket ID: ' + socket.id, 'success');
+          
+          // Start the test sequence
+          await runTestSequence();
+        });
+
+        socket.on('disconnect', () => {
+          log('Disconnected from server', 'error');
+          updateStatus('Disconnected', 'error');
+          stopTest();
+        });
+
+        socket.on('error', (error) => {
+          log('Socket error: ' + error, 'error');
+        });
+
+        // Handle server events
+        socket.on('transcription', (data) => {
+          log(`Transcription: "${data.text}" (final: ${data.isFinal})`, 'info');
+        });
+
+        socket.on('ai-response', (data) => {
+          log(`AI Response: "${data.text}"`, 'success');
+        });
+
+        socket.on('tts-audio', (data) => {
+          log('TTS audio chunk received', 'info');
+        });
+
+        // Keep connection alive with periodic pings
+        setInterval(() => {
+          if (socket && socket.connected) {
+            socket.emit('ping');
+            log('Sent keep-alive ping', 'info');
+          }
+        }, 5000);
+
+      } catch (error) {
+        log('Test error: ' + error.message, 'error');
+        updateStatus('Test failed', 'error');
+      }
+    };
+
+    async function runTestSequence() {
+      try {
+        // Get microphone
+        log('Getting microphone access...');
+        stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        log('Microphone access granted', 'success');
+
+        // Get router capabilities
+        log('Getting router capabilities...');
+        const routerCapabilities = await new Promise((resolve, reject) => {
+          const timeout = setTimeout(() => {
+            reject(new Error('Timeout'));
+          }, 5000);
+
+          socket.emit('get-router-rtp-capabilities');
+          
+          socket.once('router-rtp-capabilities', (caps) => {
+            clearTimeout(timeout);
+            resolve(caps);
+          });
+        });
+        log('Router capabilities received', 'success');
+
+        // Create device
+        log('Creating device...');
+        device = new Device();
+        await device.load({ routerRtpCapabilities: routerCapabilities });
+        log('Device loaded', 'success');
+
+        // Start voice session
+        log('Starting voice session...');
+        socket.emit('start-voice-session', {
+          voice: 'alloy',
+          language: 'en',
+          sttProvider: 'deepgram',
+          ttsProvider: 'openai',
+          llmModel: 'gpt-4'
+        });
+
+        // Wait for transport
+        const transportInfo = await new Promise((resolve, reject) => {
+          const timeout = setTimeout(() => {
+            reject(new Error('Timeout waiting for transport'));
+          }, 10000);
+
+          socket.once('transport-created', (info) => {
+            clearTimeout(timeout);
+            resolve(info);
+          });
+        });
+        log('Transport info received', 'success');
+
+        // Create transport
+        log('Creating transport...');
+        transport = device.createSendTransport(transportInfo);
+
+        // Handle transport events
+        transport.on('connect', async ({ dtlsParameters }, callback, errback) => {
+          try {
+            log('Transport connecting...');
+            socket.emit('connect-transport', { 
+              transportId: transport.id,
+              dtlsParameters 
+            });
+            
+            socket.once('transport-connected', () => {
+              log('Transport connected', 'success');
+              callback();
+            });
+          } catch (error) {
+            errback(error);
+          }
+        });
+
+        transport.on('produce', async ({ kind, rtpParameters }, callback, errback) => {
+          try {
+            log('Creating producer...');
+            socket.emit('produce', { 
+              transportId: transport.id,
+              kind, 
+              rtpParameters 
+            });
+            
+            socket.once('produced', ({ id }) => {
+              log('Producer created: ' + id, 'success');
+              callback({ id });
+            });
+          } catch (error) {
+            errback(error);
+          }
+        });
+
+        // Create producer
+        const track = stream.getAudioTracks()[0];
+        producer = await transport.produce({ 
+          track,
+          codecOptions: {
+            opusStereo: true,
+            opusDtx: true,
+            opusFec: true
+          }
+        });
+
+        // Connection established!
+        startTime = Date.now();
+        timerInterval = setInterval(updateTimer, 100);
+        
+        log('WebRTC connection established!', 'success');
+        updateStatus('Connected - Monitoring stability', 'success');
+        
+        document.getElementById('startBtn').disabled = true;
+        document.getElementById('stopBtn').disabled = false;
+
+        // Monitor transport state
+        setInterval(() => {
+          if (transport) {
+            log(`Transport state: ${transport.connectionState}`, 'info');
+          }
+        }, 10000);
+
+      } catch (error) {
+        log('Sequence error: ' + error.message, 'error');
+        throw error;
+      }
+    }
+
+    window.stopTest = function() {
+      log('Stopping test...');
+      
+      if (timerInterval) {
+        clearInterval(timerInterval);
+        timerInterval = null;
+      }
+      
+      if (socket) {
+        socket.emit('stop-voice-session');
+        socket.disconnect();
+      }
+      
+      if (producer) {
+        producer.close();
+        producer = null;
+      }
+      
+      if (transport) {
+        transport.close();
+        transport = null;
+      }
+      
+      if (stream) {
+        stream.getTracks().forEach(track => track.stop());
+        stream = null;
+      }
+      
+      updateStatus('Test stopped', 'success');
+      document.getElementById('startBtn').disabled = false;
+      document.getElementById('stopBtn').disabled = true;
+      document.getElementById('timer').textContent = 'Connection Time: 0s';
+      
+      log('Test stopped', 'success');
+    };
+
+    // Initialize
+    updateStatus('Ready - Click "Start Test" to begin');
+  </script>
+</body>
+</html>

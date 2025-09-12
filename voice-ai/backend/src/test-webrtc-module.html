@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>WebRTC Test with Module</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      padding: 20px;
+      max-width: 800px;
+      margin: 0 auto;
+    }
+    .log {
+      background: #f0f0f0;
+      padding: 10px;
+      margin: 10px 0;
+      border-radius: 5px;
+      font-family: monospace;
+      font-size: 12px;
+      max-height: 300px;
+      overflow-y: auto;
+    }
+    button {
+      padding: 10px 20px;
+      margin: 5px;
+      cursor: pointer;
+    }
+    .success { color: green; }
+    .error { color: red; }
+    .info { color: blue; }
+  </style>
+</head>
+<body>
+  <h1>WebRTC Voice AI Test (Module Version)</h1>
+  
+  <div>
+    <button id="connectBtn">1. Connect</button>
+    <button id="capabilitiesBtn">2. Get Capabilities</button>
+    <button id="sessionBtn">3. Start Session</button>
+  </div>
+  
+  <div id="log" class="log"></div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  
+  <script type="module">
+    // Import mediasoup-client as ES module
+    import { Device } from 'https://esm.sh/mediasoup-client@3';
+    
+    let socket;
+    let device;
+    let transport;
+    let producer;
+    
+    function log(message, type = 'info') {
+      const logDiv = document.getElementById('log');
+      const entry = document.createElement('div');
+      entry.className = type;
+      const timestamp = new Date().toLocaleTimeString();
+      entry.textContent = `[${timestamp}] ${message}`;
+      logDiv.appendChild(entry);
+      logDiv.scrollTop = logDiv.scrollHeight;
+      console.log(message);
+    }
+    
+    document.getElementById('connectBtn').addEventListener('click', async () => {
+      try {
+        log('Connecting to server...');
+        
+        socket = io('http://localhost:3000', {
+          transports: ['websocket']
+        });
+        
+        socket.on('connect', () => {
+          log('Connected! Socket ID: ' + socket.id, 'success');
+        });
+        
+        socket.on('disconnect', () => {
+          log('Disconnected', 'error');
+        });
+        
+        socket.on('error', (error) => {
+          log('Socket error: ' + error, 'error');
+        });
+        
+        // Handle WebRTC events
+        socket.on('router-rtp-capabilities', (capabilities) => {
+          log('Received router capabilities', 'success');
+        });
+        
+        socket.on('transport-created', (transportInfo) => {
+          log('Transport created', 'success');
+        });
+        
+        socket.on('transport-connected', () => {
+          log('Transport connected', 'success');
+        });
+        
+        socket.on('produced', ({ id }) => {
+          log('Producer created: ' + id, 'success');
+        });
+        
+        socket.on('transcription', (data) => {
+          log(`Transcription: ${data.text} (final: ${data.isFinal})`, 'info');
+        });
+        
+        socket.on('ai-response', (data) => {
+          log(`AI: ${data.text}`, 'success');
+        });
+        
+      } catch (error) {
+        log('Connection error: ' + error.message, 'error');
+      }
+    });
+    
+    document.getElementById('capabilitiesBtn').addEventListener('click', async () => {
+      try {
+        if (!socket || !socket.connected) {
+          throw new Error('Not connected');
+        }
+        
+        log('Requesting router capabilities...');
+        
+        const capabilities = await new Promise((resolve, reject) => {
+          const timeout = setTimeout(() => {
+            reject(new Error('Timeout'));
+          }, 5000);
+          
+          socket.emit('get-router-rtp-capabilities');
+          
+          socket.once('router-rtp-capabilities', (caps) => {
+            clearTimeout(timeout);
+            resolve(caps);
+          });
+        });
+        
+        log('Got capabilities, creating device...');
+        device = new Device();
+        await device.load({ routerRtpCapabilities: capabilities });
+        log('Device ready!', 'success');
+        
+      } catch (error) {
+        log('Capabilities error: ' + error.message, 'error');
+      }
+    });
+    
+    document.getElementById('sessionBtn').addEventListener('click', async () => {
+      try {
+        if (!device) {
+          throw new Error('Device not initialized');
+        }
+        
+        log('Getting microphone access...');
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        log('Got microphone', 'success');
+        
+        log('Starting voice session...');
+        socket.emit('start-voice-session', {
+          voice: 'alloy',
+          language: 'en',
+          sttProvider: 'deepgram',
+          ttsProvider: 'openai',
+          llmModel: 'gpt-4'
+        });
+        
+        const transportInfo = await new Promise((resolve, reject) => {
+          const timeout = setTimeout(() => {
+            reject(new Error('Transport timeout'));
+          }, 10000);
+          
+          socket.once('transport-created', (info) => {
+            clearTimeout(timeout);
+            resolve(info);
+          });
+        });
+        
+        log('Creating transport...');
+        transport = device.createSendTransport(transportInfo);
+        
+        transport.on('connect', async ({ dtlsParameters }, callback, errback) => {
+          try {
+            socket.emit('connect-transport', { dtlsParameters });
+            socket.once('transport-connected', callback);
+          } catch (error) {
+            errback(error);
+          }
+        });
+        
+        transport.on('produce', async ({ kind, rtpParameters }, callback, errback) => {
+          try {
+            socket.emit('produce', { kind, rtpParameters });
+            socket.once('produced', ({ id }) => callback({ id }));
+          } catch (error) {
+            errback(error);
+          }
+        });
+        
+        log('Creating producer...');
+        const track = stream.getAudioTracks()[0];
+        producer = await transport.produce({ track });
+        log('Voice session active!', 'success');
+        
+      } catch (error) {
+        log('Session error: ' + error.message, 'error');
+      }
+    });
+    
+    // Initialize
+    log('WebRTC module test ready');
+    log('Using ES modules to load mediasoup-client');
+  </script>
+</body>
+</html>

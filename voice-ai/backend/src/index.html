@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Voice AI WebRTC Tests</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      max-width: 800px;
+      margin: 0 auto;
+      padding: 20px;
+      background: #f5f5f5;
+    }
+    .container {
+      background: white;
+      padding: 30px;
+      border-radius: 12px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+    }
+    h1 {
+      text-align: center;
+      color: #333;
+      margin-bottom: 30px;
+    }
+    .test-list {
+      list-style: none;
+      padding: 0;
+    }
+    .test-item {
+      margin: 15px 0;
+      padding: 20px;
+      background: #f8f9fa;
+      border-radius: 8px;
+      border: 1px solid #dee2e6;
+      transition: all 0.2s;
+    }
+    .test-item:hover {
+      background: #e9ecef;
+      transform: translateY(-2px);
+      box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+    }
+    .test-item h3 {
+      margin: 0 0 10px 0;
+      color: #007bff;
+    }
+    .test-item p {
+      margin: 0;
+      color: #6c757d;
+    }
+    .test-item a {
+      text-decoration: none;
+      color: inherit;
+      display: block;
+    }
+    .status {
+      display: inline-block;
+      padding: 4px 8px;
+      border-radius: 4px;
+      font-size: 12px;
+      font-weight: 600;
+      margin-left: 10px;
+    }
+    .status.working {
+      background: #d4edda;
+      color: #155724;
+    }
+    .status.testing {
+      background: #fff3cd;
+      color: #856404;
+    }
+    .status.experimental {
+      background: #f8d7da;
+      color: #721c24;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>🎙️ Voice AI WebRTC Test Pages</h1>
+    
+    <p style="text-align: center; color: #6c757d; margin-bottom: 30px;">
+      Server running on http://localhost:3000
+    </p>
+
+    <ul class="test-list">
+      <li class="test-item">
+        <a href="/test-webrtc-esm.html">
+          <h3>WebRTC Voice Test (ES Modules) <span class="status working">Recommended</span></h3>
+          <p>Full WebRTC test using ES modules via esm.sh CDN. Includes audio visualization and complete voice pipeline.</p>
+        </a>
+      </li>
+
+      <li class="test-item">
+        <a href="/test-webrtc-keepalive.html">
+          <h3>WebRTC Keep-Alive Test <span class="status working">Debug</span></h3>
+          <p>Tests WebRTC connection stability with keep-alive pings and connection monitoring.</p>
+        </a>
+      </li>
+
+      <li class="test-item">
+        <a href="/test-webrtc-bundled.html">
+          <h3>WebRTC Voice Test (Bundled) <span class="status testing">Testing</span></h3>
+          <p>Full WebRTC test with bundled mediasoup-client library. Includes audio visualization and complete voice pipeline.</p>
+        </a>
+      </li>
+
+      <li class="test-item">
+        <a href="/voice-test-mock.html">
+          <h3>Mock Implementation Test <span class="status testing">Testing</span></h3>
+          <p>Uses mock mediasoup-client for testing signaling flow without actual WebRTC.</p>
+        </a>
+      </li>
+
+      <li class="test-item">
+        <a href="/test-cdn-alternatives.html">
+          <h3>CDN Loading Test <span class="status experimental">Debug</span></h3>
+          <p>Tests different CDN methods for loading mediasoup-client.</p>
+        </a>
+      </li>
+
+      <li class="test-item">
+        <a href="/test-webrtc-simple.html">
+          <h3>Simple Step-by-Step Test <span class="status experimental">Debug</span></h3>
+          <p>Basic test page for debugging connection steps.</p>
+        </a>
+      </li>
+    </ul>
+
+    <div style="margin-top: 40px; padding: 20px; background: #f8f9fa; border-radius: 8px;">
+      <h3>🚀 Getting Started</h3>
+      <ol>
+        <li>Make sure the server is running: <code>npm run dev</code></li>
+        <li>Click on "WebRTC Voice Test (Bundled)" above</li>
+        <li>Click "Connect to Server"</li>
+        <li>Click "Start Voice Session" and allow microphone access</li>
+        <li>Speak to test the voice AI system</li>
+      </ol>
+    </div>
+  </div>
+</body>
+</html>

@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>CDN Alternatives Test</title>
+</head>
+<body>
+  <h1>CDN Alternatives Test</h1>
+  <div id="output"></div>
+  <button onclick="testESM()">Test ESM</button>
+  <button onclick="testBundlr()">Test bundlr.net</button>
+
+  <script>
+    const output = document.getElementById('output');
+    
+    function log(msg) {
+      output.innerHTML += `<p>${msg}</p>`;
+      console.log(msg);
+    }
+
+    // Test 1: Use dynamic import with ESM
+    async function testESM() {
+      log('Testing ESM import...');
+      try {
+        const mediasoup = await import('https://esm.sh/mediasoup-client@3.15.6');
+        log('✅ ESM import successful');
+        log('mediasoup keys: ' + Object.keys(mediasoup));
+        
+        if (mediasoup.Device) {
+          const device = new mediasoup.Device();
+          log('✅ Device created successfully');
+          window.mediasoupClient = mediasoup;
+        }
+      } catch (error) {
+        log('❌ ESM import failed: ' + error.message);
+      }
+    }
+
+    // Test 2: Try bundlr.net CDN
+    async function testBundlr() {
+      log('Testing bundlr.net...');
+      try {
+        const script = document.createElement('script');
+        script.src = 'https://bundlr.net/mediasoup-client@3.15.6';
+        script.onload = () => {
+          log('✅ bundlr.net script loaded');
+          log('Available globals: ' + Object.keys(window).filter(k => k.includes('media')));
+        };
+        script.onerror = () => {
+          log('❌ bundlr.net script failed');
+        };
+        document.head.appendChild(script);
+      } catch (error) {
+        log('❌ bundlr.net error: ' + error.message);
+      }
+    }
+
+    // Test what's currently available
+    log('Initial state - available globals: ' + Object.keys(window).filter(k => k.includes('media')));
+  </script>
+</body>
+</html>

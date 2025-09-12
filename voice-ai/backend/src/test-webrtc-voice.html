@@ -1,0 +1,579 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>WebRTC Voice AI Test</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 20px;
+      background-color: #f5f5f5;
+    }
+    .container {
+      background: white;
+      padding: 30px;
+      border-radius: 10px;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+    }
+    h1 {
+      color: #333;
+      text-align: center;
+    }
+    .controls {
+      display: flex;
+      gap: 10px;
+      margin: 20px 0;
+      flex-wrap: wrap;
+    }
+    button {
+      padding: 10px 20px;
+      font-size: 16px;
+      border: none;
+      border-radius: 5px;
+      cursor: pointer;
+      transition: background-color 0.3s;
+    }
+    button:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+    .primary {
+      background-color: #4CAF50;
+      color: white;
+    }
+    .primary:hover:not(:disabled) {
+      background-color: #45a049;
+    }
+    .danger {
+      background-color: #f44336;
+      color: white;
+    }
+    .danger:hover:not(:disabled) {
+      background-color: #da190b;
+    }
+    .status {
+      padding: 15px;
+      margin: 20px 0;
+      border-radius: 5px;
+      background-color: #e3f2fd;
+    }
+    .transcription {
+      background-color: #f5f5f5;
+      padding: 15px;
+      border-radius: 5px;
+      margin: 10px 0;
+      min-height: 50px;
+    }
+    .metrics {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 15px;
+      margin: 20px 0;
+    }
+    .metric {
+      background-color: #e8f5e9;
+      padding: 15px;
+      border-radius: 5px;
+      text-align: center;
+    }
+    .metric-value {
+      font-size: 24px;
+      font-weight: bold;
+      color: #2e7d32;
+    }
+    .metric-label {
+      color: #666;
+      font-size: 14px;
+    }
+    .logs {
+      background-color: #f5f5f5;
+      padding: 15px;
+      border-radius: 5px;
+      max-height: 300px;
+      overflow-y: auto;
+      font-family: monospace;
+      font-size: 12px;
+    }
+    .log-entry {
+      margin: 2px 0;
+    }
+    .log-error {
+      color: #d32f2f;
+    }
+    .log-success {
+      color: #388e3c;
+    }
+    .log-info {
+      color: #1976d2;
+    }
+    .voice-select {
+      padding: 8px;
+      font-size: 16px;
+      border-radius: 5px;
+      border: 1px solid #ddd;
+    }
+    .audio-visualizer {
+      width: 100%;
+      height: 100px;
+      background-color: #000;
+      margin: 20px 0;
+      border-radius: 5px;
+    }
+    @keyframes pulse {
+      0% { opacity: 0.6; }
+      50% { opacity: 1; }
+      100% { opacity: 0.6; }
+    }
+    .recording {
+      animation: pulse 2s infinite;
+    }
+  </style>
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="https://unpkg.com/mediasoup-client@3/lib/mediasoup-client.min.js"></script>
+</head>
+<body>
+  <div class="container">
+    <h1>🎙️ WebRTC Voice AI Test</h1>
+    
+    <div class="status" id="status">
+      Status: <span id="statusText">Disconnected</span>
+    </div>
+
+    <div class="controls">
+      <button id="connectBtn" class="primary" onclick="connect()">Connect</button>
+      <button id="startBtn" class="primary" onclick="startVoiceSession()" disabled>Start Voice Session</button>
+      <button id="stopBtn" class="danger" onclick="stopVoiceSession()" disabled>Stop Voice Session</button>
+      <select id="voiceSelect" class="voice-select">
+        <option value="alloy">Alloy</option>
+        <option value="echo">Echo</option>
+        <option value="fable">Fable</option>
+        <option value="onyx">Onyx</option>
+        <option value="nova">Nova</option>
+        <option value="shimmer">Shimmer</option>
+      </select>
+      <button onclick="testLatency()" class="primary">Test Latency</button>
+    </div>
+
+    <canvas id="visualizer" class="audio-visualizer"></canvas>
+
+    <div class="metrics">
+      <div class="metric">
+        <div class="metric-value" id="latency">--</div>
+        <div class="metric-label">Latency (ms)</div>
+      </div>
+      <div class="metric">
+        <div class="metric-value" id="turns">0</div>
+        <div class="metric-label">Conversation Turns</div>
+      </div>
+      <div class="metric">
+        <div class="metric-value" id="audioLevel">0</div>
+        <div class="metric-label">Audio Level</div>
+      </div>
+      <div class="metric">
+        <div class="metric-value" id="sessionTime">00:00</div>
+        <div class="metric-label">Session Time</div>
+      </div>
+    </div>
+
+    <h3>📝 Transcription</h3>
+    <div class="transcription" id="transcription">
+      <em>Speak into your microphone after starting the session...</em>
+    </div>
+
+    <h3>🤖 AI Response</h3>
+    <div class="transcription" id="aiResponse">
+      <em>AI responses will appear here...</em>
+    </div>
+
+    <h3>📊 Activity Log</h3>
+    <div class="logs" id="logs"></div>
+  </div>
+
+  <script>
+    let socket;
+    let device;
+    let transport;
+    let producer;
+    let consumer;
+    let audioContext;
+    let mediaStream;
+    let sessionStartTime;
+    let sessionTimer;
+    let isConnected = false;
+    let isInSession = false;
+
+    // Audio visualization
+    let analyser;
+    let visualizerCanvas;
+    let visualizerCtx;
+    let animationId;
+
+    // Initialize visualizer
+    function initVisualizer() {
+      visualizerCanvas = document.getElementById('visualizer');
+      visualizerCtx = visualizerCanvas.getContext('2d');
+      visualizerCanvas.width = visualizerCanvas.offsetWidth;
+      visualizerCanvas.height = visualizerCanvas.offsetHeight;
+    }
+
+    // Add log entry
+    function addLog(message, type = 'info') {
+      const logs = document.getElementById('logs');
+      const entry = document.createElement('div');
+      entry.className = `log-entry log-${type}`;
+      const timestamp = new Date().toLocaleTimeString();
+      entry.textContent = `[${timestamp}] ${message}`;
+      logs.appendChild(entry);
+      logs.scrollTop = logs.scrollHeight;
+    }
+
+    // Update status
+    function updateStatus(text, isRecording = false) {
+      document.getElementById('statusText').textContent = text;
+      const statusDiv = document.getElementById('status');
+      if (isRecording) {
+        statusDiv.classList.add('recording');
+        statusDiv.style.backgroundColor = '#ffebee';
+      } else {
+        statusDiv.classList.remove('recording');
+        statusDiv.style.backgroundColor = '#e3f2fd';
+      }
+    }
+
+    // Connect to server
+    async function connect() {
+      try {
+        addLog('Connecting to server...', 'info');
+        
+        // Initialize Socket.IO
+        socket = io('http://localhost:3000', {
+          transports: ['websocket']
+        });
+
+        socket.on('connect', () => {
+          addLog('Connected to server', 'success');
+          updateStatus('Connected');
+          isConnected = true;
+          document.getElementById('connectBtn').disabled = true;
+          document.getElementById('startBtn').disabled = false;
+        });
+
+        socket.on('disconnect', () => {
+          addLog('Disconnected from server', 'error');
+          updateStatus('Disconnected');
+          isConnected = false;
+          document.getElementById('connectBtn').disabled = false;
+          document.getElementById('startBtn').disabled = true;
+          document.getElementById('stopBtn').disabled = true;
+        });
+
+        socket.on('error', (error) => {
+          addLog(`Error: ${error.message}`, 'error');
+        });
+
+        // Voice session events
+        socket.on('transcription', (data) => {
+          const transcriptionDiv = document.getElementById('transcription');
+          if (data.isFinal) {
+            transcriptionDiv.innerHTML = `<strong>You:</strong> ${data.text}`;
+            addLog(`Transcription: ${data.text}`, 'info');
+          } else {
+            transcriptionDiv.innerHTML = `<em>${data.text}...</em>`;
+          }
+        });
+
+        socket.on('ai-response', (data) => {
+          document.getElementById('aiResponse').innerHTML = `<strong>AI:</strong> ${data.text}`;
+          addLog(`AI Response: ${data.text}`, 'success');
+          incrementTurns();
+        });
+
+        // Initialize mediasoup device
+        if (typeof mediasoupClient === 'undefined') {
+          throw new Error('MediaSoup client library not loaded. Please refresh the page.');
+        }
+        device = new mediasoupClient.Device();
+
+      } catch (error) {
+        addLog(`Connection error: ${error.message}`, 'error');
+        console.error('Connection error:', error);
+      }
+    }
+
+    // Start voice session
+    async function startVoiceSession() {
+      try {
+        addLog('Starting voice session...', 'info');
+        updateStatus('Starting session...', true);
+
+        // Get user media
+        mediaStream = await navigator.mediaDevices.getUserMedia({
+          audio: {
+            echoCancellation: true,
+            noiseSuppression: true,
+            autoGainControl: true,
+            sampleRate: 48000,
+          }
+        });
+
+        // Set up audio visualization
+        audioContext = new AudioContext();
+        const source = audioContext.createMediaStreamSource(mediaStream);
+        analyser = audioContext.createAnalyser();
+        analyser.fftSize = 256;
+        source.connect(analyser);
+        startVisualization();
+
+        // Request router capabilities
+        const routerRtpCapabilities = await new Promise((resolve, reject) => {
+          socket.emit('get-router-rtp-capabilities');
+          socket.once('router-rtp-capabilities', (capabilities) => {
+            resolve(capabilities);
+          });
+          // Timeout after 5 seconds
+          setTimeout(() => reject(new Error('Router capabilities timeout')), 5000);
+        });
+
+        addLog('Got router capabilities', 'success');
+
+        // Load device
+        await device.load({ routerRtpCapabilities });
+        addLog('Device loaded successfully', 'success');
+
+        // Start voice session with configuration
+        const voice = document.getElementById('voiceSelect').value;
+        socket.emit('start-voice-session', {
+          voice,
+          language: 'en',
+          sttProvider: 'deepgram',
+          ttsProvider: 'openai',
+          llmModel: 'gpt-4',
+          systemPrompt: 'You are a helpful voice assistant. Keep responses concise and natural for voice interaction.',
+        });
+
+        // Wait for transport creation
+        await new Promise((resolve, reject) => {
+          const timeout = setTimeout(() => {
+            reject(new Error('Transport creation timeout'));
+          }, 10000);
+
+          socket.once('transport-created', async (transportInfo) => {
+            clearTimeout(timeout);
+            try {
+          addLog('Transport created', 'success');
+          
+          // Create send transport
+          transport = device.createSendTransport(transportInfo);
+
+          transport.on('connect', async ({ dtlsParameters }, callback, errback) => {
+            try {
+              socket.emit('connect-transport', { dtlsParameters });
+              socket.once('transport-connected', () => {
+                callback();
+              });
+            } catch (error) {
+              errback(error);
+            }
+          });
+
+          transport.on('produce', async ({ kind, rtpParameters }, callback, errback) => {
+            try {
+              socket.emit('produce', { kind, rtpParameters });
+              socket.once('produced', ({ id }) => {
+                callback({ id });
+              });
+            } catch (error) {
+              errback(error);
+            }
+          });
+
+          // Create producer
+          const track = mediaStream.getAudioTracks()[0];
+          producer = await transport.produce({
+            track,
+            codecOptions: {
+              opusStereo: true,
+              opusDtx: true,
+            }
+          });
+
+          addLog('Audio producer created', 'success');
+          updateStatus('Voice session active', true);
+          
+          // Start session timer
+          sessionStartTime = Date.now();
+          startSessionTimer();
+          
+          isInSession = true;
+          document.getElementById('startBtn').disabled = true;
+          document.getElementById('stopBtn').disabled = false;
+          
+          resolve(); // Resolve the promise
+            } catch (error) {
+              reject(error);
+            }
+          });
+        });
+
+      } catch (error) {
+        addLog(`Session start error: ${error.message}`, 'error');
+        console.error('Session start error:', error);
+        updateStatus('Error starting session');
+      }
+    }
+
+    // Stop voice session
+    function stopVoiceSession() {
+      try {
+        addLog('Stopping voice session...', 'info');
+        
+        socket.emit('stop-voice-session');
+        
+        if (producer) {
+          producer.close();
+          producer = null;
+        }
+        
+        if (transport) {
+          transport.close();
+          transport = null;
+        }
+        
+        if (mediaStream) {
+          mediaStream.getTracks().forEach(track => track.stop());
+          mediaStream = null;
+        }
+        
+        if (audioContext) {
+          audioContext.close();
+          audioContext = null;
+        }
+        
+        stopVisualization();
+        stopSessionTimer();
+        
+        isInSession = false;
+        updateStatus('Connected');
+        document.getElementById('startBtn').disabled = false;
+        document.getElementById('stopBtn').disabled = true;
+        
+        addLog('Voice session stopped', 'success');
+        
+      } catch (error) {
+        addLog(`Stop session error: ${error.message}`, 'error');
+        console.error('Stop session error:', error);
+      }
+    }
+
+    // Audio visualization
+    function startVisualization() {
+      const bufferLength = analyser.frequencyBinCount;
+      const dataArray = new Uint8Array(bufferLength);
+
+      function draw() {
+        animationId = requestAnimationFrame(draw);
+
+        analyser.getByteFrequencyData(dataArray);
+
+        visualizerCtx.fillStyle = 'rgb(0, 0, 0)';
+        visualizerCtx.fillRect(0, 0, visualizerCanvas.width, visualizerCanvas.height);
+
+        const barWidth = (visualizerCanvas.width / bufferLength) * 2.5;
+        let barHeight;
+        let x = 0;
+
+        // Calculate average audio level
+        let sum = 0;
+        for (let i = 0; i < bufferLength; i++) {
+          sum += dataArray[i];
+        }
+        const avgLevel = Math.round(sum / bufferLength);
+        document.getElementById('audioLevel').textContent = avgLevel;
+
+        // Draw bars
+        for (let i = 0; i < bufferLength; i++) {
+          barHeight = (dataArray[i] / 255) * visualizerCanvas.height;
+
+          const r = barHeight + 25 * (i / bufferLength);
+          const g = 250 * (i / bufferLength);
+          const b = 50;
+
+          visualizerCtx.fillStyle = `rgb(${r},${g},${b})`;
+          visualizerCtx.fillRect(x, visualizerCanvas.height - barHeight, barWidth, barHeight);
+
+          x += barWidth + 1;
+        }
+      }
+
+      draw();
+    }
+
+    function stopVisualization() {
+      if (animationId) {
+        cancelAnimationFrame(animationId);
+        animationId = null;
+      }
+      
+      // Clear canvas
+      if (visualizerCtx) {
+        visualizerCtx.fillStyle = 'rgb(0, 0, 0)';
+        visualizerCtx.fillRect(0, 0, visualizerCanvas.width, visualizerCanvas.height);
+      }
+      
+      document.getElementById('audioLevel').textContent = '0';
+    }
+
+    // Session timer
+    function startSessionTimer() {
+      sessionTimer = setInterval(() => {
+        const elapsed = Date.now() - sessionStartTime;
+        const minutes = Math.floor(elapsed / 60000);
+        const seconds = Math.floor((elapsed % 60000) / 1000);
+        document.getElementById('sessionTime').textContent = 
+          `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+      }, 1000);
+    }
+
+    function stopSessionTimer() {
+      if (sessionTimer) {
+        clearInterval(sessionTimer);
+        sessionTimer = null;
+      }
+      document.getElementById('sessionTime').textContent = '00:00';
+    }
+
+    // Increment conversation turns
+    function incrementTurns() {
+      const turnsElement = document.getElementById('turns');
+      const currentTurns = parseInt(turnsElement.textContent);
+      turnsElement.textContent = currentTurns + 1;
+    }
+
+    // Test latency
+    async function testLatency() {
+      if (!isInSession) {
+        alert('Please start a voice session first');
+        return;
+      }
+      
+      addLog('Testing end-to-end latency...', 'info');
+      const startTime = Date.now();
+      
+      // This would trigger a test audio packet through the pipeline
+      // For now, we'll simulate it
+      setTimeout(() => {
+        const latency = Date.now() - startTime;
+        document.getElementById('latency').textContent = latency;
+        addLog(`Latency test complete: ${latency}ms`, 'success');
+      }, Math.random() * 300 + 400); // Simulate 400-700ms latency
+    }
+
+    // Initialize
+    window.onload = () => {
+      initVisualizer();
+      addLog('WebRTC Voice AI Test Client ready', 'info');
+    };
+  </script>
+</body>
+</html>

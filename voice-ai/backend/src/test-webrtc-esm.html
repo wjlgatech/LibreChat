@@ -1,0 +1,477 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Voice AI Test - ESM Version</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      max-width: 900px;
+      margin: 0 auto;
+      padding: 20px;
+      background: #f0f0f0;
+    }
+    .container {
+      background: white;
+      padding: 30px;
+      border-radius: 12px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+    }
+    h1 {
+      text-align: center;
+      color: #333;
+    }
+    .status {
+      background: #f8f9fa;
+      border: 2px solid #dee2e6;
+      padding: 15px;
+      margin: 20px 0;
+      border-radius: 8px;
+      text-align: center;
+      font-weight: 500;
+    }
+    .status.success {
+      background: #d4edda;
+      border-color: #28a745;
+      color: #155724;
+    }
+    .status.error {
+      background: #f8d7da;
+      border-color: #dc3545;
+      color: #721c24;
+    }
+    .status.active {
+      background: #cce5ff;
+      border-color: #007bff;
+      color: #004085;
+    }
+    .controls {
+      display: flex;
+      gap: 10px;
+      justify-content: center;
+      margin: 30px 0;
+      flex-wrap: wrap;
+    }
+    button {
+      padding: 12px 24px;
+      font-size: 16px;
+      font-weight: 500;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    button:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+    .btn-primary {
+      background: #007bff;
+      color: white;
+    }
+    .btn-success {
+      background: #28a745;
+      color: white;
+    }
+    .btn-danger {
+      background: #dc3545;
+      color: white;
+    }
+    .log {
+      background: #f8f9fa;
+      border: 1px solid #dee2e6;
+      padding: 15px;
+      border-radius: 6px;
+      font-family: monospace;
+      font-size: 13px;
+      max-height: 400px;
+      overflow-y: auto;
+      margin-top: 20px;
+    }
+    .log-entry {
+      margin: 2px 0;
+      padding: 2px 0;
+    }
+    .log-success { color: #28a745; }
+    .log-error { color: #dc3545; }
+    .log-info { color: #17a2b8; }
+    .audio-visualizer {
+      width: 100%;
+      height: 100px;
+      background: #000;
+      margin: 20px 0;
+      border-radius: 6px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>🎙️ Voice AI Test (ES Modules)</h1>
+    
+    <div id="status" class="status">
+      Loading mediasoup-client via ES modules...
+    </div>
+
+    <div class="controls">
+      <button id="loadBtn" class="btn-primary" onclick="loadMediasoup()">
+        Load mediasoup-client
+      </button>
+      <button id="connectBtn" class="btn-primary" onclick="connect()" disabled>
+        Connect to Server
+      </button>
+      <button id="startBtn" class="btn-success" onclick="startVoiceSession()" disabled>
+        Start Voice Session
+      </button>
+      <button id="stopBtn" class="btn-danger" onclick="stopVoiceSession()" disabled>
+        Stop Session
+      </button>
+    </div>
+
+    <canvas id="visualizer" class="audio-visualizer"></canvas>
+
+    <div class="log" id="log"></div>
+  </div>
+
+  <!-- Socket.IO -->
+  <script src="/socket.io/socket.io.js"></script>
+  
+  <script type="module">
+    let socket;
+    let Device;
+    let mediasoupClient;
+    let device;
+    let transport;
+    let producer;
+    let stream;
+    let audioContext;
+    let analyser;
+    let animationId;
+
+    function log(message, type = 'info') {
+      const logDiv = document.getElementById('log');
+      const entry = document.createElement('div');
+      entry.className = `log-entry log-${type}`;
+      const time = new Date().toLocaleTimeString();
+      entry.textContent = `[${time}] ${message}`;
+      logDiv.appendChild(entry);
+      logDiv.scrollTop = logDiv.scrollHeight;
+      console.log(`[${type}]`, message);
+    }
+
+    function updateStatus(text, className = '') {
+      const status = document.getElementById('status');
+      status.textContent = text;
+      status.className = 'status ' + className;
+    }
+
+    // Load mediasoup-client
+    window.loadMediasoup = async function() {
+      try {
+        log('Loading mediasoup-client...');
+        updateStatus('Loading mediasoup-client...', 'active');
+        
+        mediasoupClient = await import('https://esm.sh/mediasoup-client@3.15.6');
+        Device = mediasoupClient.Device;
+        
+        log('mediasoup-client loaded successfully!', 'success');
+        log('Available exports: ' + Object.keys(mediasoupClient).join(', '));
+        
+        updateStatus('mediasoup-client loaded - Click "Connect"', 'success');
+        document.getElementById('loadBtn').disabled = true;
+        document.getElementById('connectBtn').disabled = false;
+        
+      } catch (error) {
+        log('Failed to load mediasoup-client: ' + error.message, 'error');
+        updateStatus('Failed to load mediasoup-client', 'error');
+      }
+    };
+
+    // Connect to server
+    window.connect = async function() {
+      try {
+        log('Connecting to server...');
+        updateStatus('Connecting...', 'active');
+        
+        socket = io('http://localhost:3000', {
+          transports: ['websocket']
+        });
+
+        socket.on('connect', () => {
+          log('Connected! Socket ID: ' + socket.id, 'success');
+          updateStatus('Connected to server', 'success');
+          document.getElementById('connectBtn').disabled = true;
+          document.getElementById('startBtn').disabled = false;
+        });
+
+        socket.on('disconnect', () => {
+          log('Disconnected from server', 'error');
+          updateStatus('Disconnected', 'error');
+          resetUI();
+        });
+
+        socket.on('error', (error) => {
+          log('Socket error: ' + error, 'error');
+        });
+
+        // Voice events
+        socket.on('transcription', (data) => {
+          log(`STT: "${data.text}" (final: ${data.isFinal})`, 'info');
+        });
+
+        socket.on('ai-response', (data) => {
+          log(`AI: "${data.text}"`, 'success');
+        });
+
+        socket.on('tts-audio', (data) => {
+          log('TTS audio chunk received', 'info');
+        });
+
+      } catch (error) {
+        log('Connection error: ' + error.message, 'error');
+        updateStatus('Connection failed', 'error');
+      }
+    };
+
+    // Start voice session
+    window.startVoiceSession = async function() {
+      try {
+        log('Starting voice session...');
+        updateStatus('Starting session...', 'active');
+
+        // Get microphone access
+        log('Requesting microphone access...');
+        stream = await navigator.mediaDevices.getUserMedia({
+          audio: {
+            echoCancellation: true,
+            noiseSuppression: true,
+            autoGainControl: true
+          }
+        });
+        log('Microphone access granted', 'success');
+
+        // Setup audio visualization
+        setupAudioVisualization(stream);
+
+        // Get router capabilities
+        log('Getting router capabilities...');
+        const routerCapabilities = await new Promise((resolve, reject) => {
+          const timeout = setTimeout(() => {
+            reject(new Error('Timeout waiting for router capabilities'));
+          }, 5000);
+
+          socket.emit('get-router-rtp-capabilities');
+          
+          socket.once('router-rtp-capabilities', (caps) => {
+            clearTimeout(timeout);
+            log('Router capabilities received', 'success');
+            resolve(caps);
+          });
+        });
+
+        // Create device
+        log('Creating mediasoup Device...');
+        device = new Device();
+        await device.load({ routerRtpCapabilities: routerCapabilities });
+        log('Device loaded successfully', 'success');
+
+        // Start voice session
+        log('Requesting voice session start...');
+        socket.emit('start-voice-session', {
+          voice: 'alloy',
+          language: 'en',
+          sttProvider: 'deepgram',
+          ttsProvider: 'openai',
+          llmModel: 'gpt-4'
+        });
+
+        // Wait for transport info
+        const transportInfo = await new Promise((resolve, reject) => {
+          const timeout = setTimeout(() => {
+            reject(new Error('Timeout waiting for transport'));
+          }, 10000);
+
+          socket.once('transport-created', (info) => {
+            clearTimeout(timeout);
+            log('Transport info received', 'success');
+            resolve(info);
+          });
+        });
+
+        // Create transport
+        log('Creating send transport...');
+        transport = device.createSendTransport(transportInfo);
+
+        // Handle transport events
+        transport.on('connect', async ({ dtlsParameters }, callback, errback) => {
+          try {
+            log('Transport requesting connection...');
+            socket.emit('connect-transport', { 
+              transportId: transport.id,
+              dtlsParameters 
+            });
+            
+            socket.once('transport-connected', () => {
+              log('Transport connected', 'success');
+              callback();
+            });
+          } catch (error) {
+            errback(error);
+          }
+        });
+
+        transport.on('produce', async ({ kind, rtpParameters }, callback, errback) => {
+          try {
+            log('Transport requesting produce...');
+            socket.emit('produce', { 
+              transportId: transport.id,
+              kind, 
+              rtpParameters 
+            });
+            
+            socket.once('produced', ({ id }) => {
+              log('Producer created: ' + id, 'success');
+              callback({ id });
+            });
+          } catch (error) {
+            errback(error);
+          }
+        });
+
+        // Create producer
+        log('Creating audio producer...');
+        const track = stream.getAudioTracks()[0];
+        producer = await transport.produce({ 
+          track,
+          codecOptions: {
+            opusStereo: true,
+            opusDtx: true,
+            opusFec: true
+          }
+        });
+
+        log('Voice session active!', 'success');
+        updateStatus('Voice session active - Speak now!', 'success');
+        
+        document.getElementById('startBtn').disabled = true;
+        document.getElementById('stopBtn').disabled = false;
+
+      } catch (error) {
+        log('Session error: ' + error.message, 'error');
+        updateStatus('Session failed', 'error');
+        stopVoiceSession();
+      }
+    };
+
+    // Stop voice session
+    window.stopVoiceSession = function() {
+      try {
+        log('Stopping voice session...');
+        
+        if (socket) {
+          socket.emit('stop-voice-session');
+        }
+        
+        if (producer) {
+          producer.close();
+          producer = null;
+        }
+        
+        if (transport) {
+          transport.close();
+          transport = null;
+        }
+        
+        if (stream) {
+          stream.getTracks().forEach(track => track.stop());
+          stream = null;
+        }
+
+        if (animationId) {
+          cancelAnimationFrame(animationId);
+          animationId = null;
+        }
+
+        clearCanvas();
+        
+        updateStatus('Session stopped', 'success');
+        document.getElementById('startBtn').disabled = false;
+        document.getElementById('stopBtn').disabled = true;
+        
+        log('Session stopped', 'success');
+        
+      } catch (error) {
+        log('Stop error: ' + error.message, 'error');
+      }
+    };
+
+    // Audio visualization
+    function setupAudioVisualization(stream) {
+      audioContext = new AudioContext();
+      analyser = audioContext.createAnalyser();
+      const source = audioContext.createMediaStreamSource(stream);
+      source.connect(analyser);
+      analyser.fftSize = 2048;
+      drawVisualization();
+    }
+
+    function drawVisualization() {
+      const canvas = document.getElementById('visualizer');
+      const ctx = canvas.getContext('2d');
+      canvas.width = canvas.offsetWidth;
+      canvas.height = canvas.offsetHeight;
+
+      const bufferLength = analyser.frequencyBinCount;
+      const dataArray = new Uint8Array(bufferLength);
+
+      function draw() {
+        animationId = requestAnimationFrame(draw);
+        analyser.getByteTimeDomainData(dataArray);
+
+        ctx.fillStyle = 'rgb(0, 0, 0)';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        ctx.lineWidth = 2;
+        ctx.strokeStyle = 'rgb(0, 255, 0)';
+        ctx.beginPath();
+
+        const sliceWidth = canvas.width / bufferLength;
+        let x = 0;
+
+        for (let i = 0; i < bufferLength; i++) {
+          const v = dataArray[i] / 128.0;
+          const y = v * canvas.height / 2;
+
+          if (i === 0) {
+            ctx.moveTo(x, y);
+          } else {
+            ctx.lineTo(x, y);
+          }
+
+          x += sliceWidth;
+        }
+
+        ctx.lineTo(canvas.width, canvas.height / 2);
+        ctx.stroke();
+      }
+
+      draw();
+    }
+
+    function clearCanvas() {
+      const canvas = document.getElementById('visualizer');
+      const ctx = canvas.getContext('2d');
+      ctx.fillStyle = 'rgb(0, 0, 0)';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+    }
+
+    function resetUI() {
+      document.getElementById('connectBtn').disabled = false;
+      document.getElementById('startBtn').disabled = true;
+      document.getElementById('stopBtn').disabled = true;
+    }
+
+    // Initialize
+    updateStatus('Ready - Click "Load mediasoup-client" to begin');
+    log('Page loaded, ready to load mediasoup-client');
+  </script>
+</body>
+</html>

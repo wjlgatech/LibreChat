@@ -1,0 +1,345 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>WebRTC Voice AI - Bundled Version</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      max-width: 1000px;
+      margin: 0 auto;
+      padding: 20px;
+      background: #f5f5f5;
+    }
+    .container {
+      background: white;
+      padding: 30px;
+      border-radius: 10px;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+    }
+    h1 {
+      color: #333;
+      text-align: center;
+      margin-bottom: 30px;
+    }
+    .controls {
+      display: flex;
+      gap: 10px;
+      margin: 20px 0;
+      flex-wrap: wrap;
+      justify-content: center;
+    }
+    button {
+      padding: 12px 24px;
+      font-size: 16px;
+      border: none;
+      border-radius: 5px;
+      cursor: pointer;
+      transition: all 0.3s;
+      font-weight: 500;
+    }
+    button:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+    .primary {
+      background: #4CAF50;
+      color: white;
+    }
+    .primary:hover:not(:disabled) {
+      background: #45a049;
+    }
+    .danger {
+      background: #f44336;
+      color: white;
+    }
+    .status {
+      padding: 15px;
+      margin: 20px 0;
+      border-radius: 5px;
+      text-align: center;
+      font-weight: 500;
+    }
+    .status.connected {
+      background: #d4edda;
+      color: #155724;
+    }
+    .status.disconnected {
+      background: #f8d7da;
+      color: #721c24;
+    }
+    .status.active {
+      background: #cce5ff;
+      color: #004085;
+      animation: pulse 2s infinite;
+    }
+    @keyframes pulse {
+      0%, 100% { opacity: 0.8; }
+      50% { opacity: 1; }
+    }
+    .log {
+      background: #f8f9fa;
+      border: 1px solid #dee2e6;
+      border-radius: 5px;
+      padding: 15px;
+      margin: 20px 0;
+      max-height: 300px;
+      overflow-y: auto;
+      font-family: 'Courier New', monospace;
+      font-size: 13px;
+    }
+    .log-entry {
+      margin: 3px 0;
+      padding: 3px 0;
+    }
+    .log-success { color: #28a745; }
+    .log-error { color: #dc3545; }
+    .log-info { color: #17a2b8; }
+    .transcription-box {
+      background: #e3f2fd;
+      padding: 20px;
+      border-radius: 5px;
+      margin: 10px 0;
+      min-height: 60px;
+    }
+    .ai-response-box {
+      background: #f3e5f5;
+      padding: 20px;
+      border-radius: 5px;
+      margin: 10px 0;
+      min-height: 60px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>🎙️ WebRTC Voice AI Test (Bundled)</h1>
+    
+    <div id="status" class="status disconnected">
+      Status: <span id="statusText">Loading...</span>
+    </div>
+
+    <div class="controls">
+      <button id="connectBtn" class="primary" onclick="testConnection()" disabled>Test Connection</button>
+      <button id="sessionBtn" class="primary" onclick="testVoiceSession()" disabled>Start Voice Session</button>
+      <button id="stopBtn" class="danger" onclick="stopSession()" disabled>Stop Session</button>
+    </div>
+
+    <h3>📝 You said:</h3>
+    <div class="transcription-box" id="transcription">
+      <em>Waiting to start...</em>
+    </div>
+
+    <h3>🤖 AI Response:</h3>
+    <div class="ai-response-box" id="aiResponse">
+      <em>AI responses will appear here...</em>
+    </div>
+
+    <h3>📊 Activity Log:</h3>
+    <div class="log" id="log"></div>
+  </div>
+
+  <!-- Load Socket.IO -->
+  <script src="/socket.io/socket.io.js"></script>
+  
+  <!-- Use simple-peer for WebRTC instead of mediasoup-client -->
+  <script src="https://unpkg.com/simple-peer@9/simplepeer.min.js"></script>
+  
+  <script>
+    // Global variables
+    let socket;
+    let peer;
+    let stream;
+    let isConnected = false;
+
+    // Log function
+    function log(message, type = 'info') {
+      const logDiv = document.getElementById('log');
+      const entry = document.createElement('div');
+      entry.className = `log-entry log-${type}`;
+      const timestamp = new Date().toLocaleTimeString();
+      entry.textContent = `[${timestamp}] ${message}`;
+      logDiv.appendChild(entry);
+      logDiv.scrollTop = logDiv.scrollHeight;
+      console.log(`[${type}]`, message);
+    }
+
+    // Update status
+    function updateStatus(text, className = 'disconnected') {
+      document.getElementById('statusText').textContent = text;
+      document.getElementById('status').className = `status ${className}`;
+    }
+
+    // Test connection first
+    async function testConnection() {
+      try {
+        log('Testing connection to server...');
+        
+        socket = io('http://localhost:3000', {
+          transports: ['websocket']
+        });
+
+        socket.on('connect', () => {
+          log('Connected to server! ID: ' + socket.id, 'success');
+          updateStatus('Connected', 'connected');
+          isConnected = true;
+          document.getElementById('connectBtn').disabled = true;
+          document.getElementById('sessionBtn').disabled = false;
+        });
+
+        socket.on('disconnect', () => {
+          log('Disconnected from server', 'error');
+          updateStatus('Disconnected', 'disconnected');
+          isConnected = false;
+          resetUI();
+        });
+
+        socket.on('error', (error) => {
+          log('Socket error: ' + error.message || error, 'error');
+        });
+
+        // Set up voice session events
+        socket.on('transcription', (data) => {
+          const elem = document.getElementById('transcription');
+          if (data.isFinal) {
+            elem.innerHTML = `<strong>${data.text}</strong>`;
+            log('Transcription: ' + data.text, 'info');
+          } else {
+            elem.innerHTML = `<em>${data.text}...</em>`;
+          }
+        });
+
+        socket.on('ai-response', (data) => {
+          document.getElementById('aiResponse').innerHTML = `<strong>${data.text}</strong>`;
+          log('AI Response: ' + data.text, 'success');
+        });
+
+      } catch (error) {
+        log('Connection error: ' + error.message, 'error');
+        updateStatus('Connection Failed', 'disconnected');
+      }
+    }
+
+    // Alternative approach: Use native WebRTC without mediasoup
+    async function testVoiceSession() {
+      try {
+        if (!isConnected) {
+          log('Not connected to server!', 'error');
+          return;
+        }
+
+        log('Starting voice session (simplified approach)...');
+        updateStatus('Starting session...', 'active');
+
+        // Get microphone access
+        log('Requesting microphone access...');
+        stream = await navigator.mediaDevices.getUserMedia({
+          audio: {
+            echoCancellation: true,
+            noiseSuppression: true,
+            autoGainControl: true
+          }
+        });
+        log('Microphone access granted', 'success');
+
+        // For now, let's test without mediasoup by sending audio data directly
+        log('Creating audio context for processing...');
+        const audioContext = new AudioContext();
+        const source = audioContext.createMediaStreamSource(stream);
+        const processor = audioContext.createScriptProcessor(4096, 1, 1);
+        
+        // Simple audio level monitoring
+        let audioLevel = 0;
+        processor.onaudioprocess = (e) => {
+          const input = e.inputBuffer.getChannelData(0);
+          let sum = 0;
+          for (let i = 0; i < input.length; i++) {
+            sum += Math.abs(input[i]);
+          }
+          audioLevel = sum / input.length;
+          
+          // Show audio level in log occasionally
+          if (Math.random() < 0.1 && audioLevel > 0.01) {
+            log(`Audio level: ${(audioLevel * 100).toFixed(1)}%`, 'info');
+          }
+        };
+        
+        source.connect(processor);
+        processor.connect(audioContext.destination);
+
+        // Start voice session on server
+        socket.emit('start-voice-session', {
+          voice: 'alloy',
+          language: 'en',
+          sttProvider: 'deepgram',
+          ttsProvider: 'openai',
+          llmModel: 'gpt-4',
+          systemPrompt: 'You are a helpful voice assistant. Keep responses concise.'
+        });
+
+        log('Voice session request sent', 'info');
+        
+        // For testing, let's try a simpler approach
+        socket.once('transport-created', (transportInfo) => {
+          log('Transport info received, but using simplified audio handling', 'info');
+        });
+
+        updateStatus('Voice Session Active (Test Mode)', 'active');
+        document.getElementById('sessionBtn').disabled = true;
+        document.getElementById('stopBtn').disabled = false;
+
+        // Test by sending a text message directly
+        setTimeout(() => {
+          log('Sending test transcription...', 'info');
+          socket.emit('test-transcription', { text: 'Hello, can you hear me?' });
+        }, 2000);
+
+      } catch (error) {
+        log('Session error: ' + error.message, 'error');
+        updateStatus('Session Failed', 'disconnected');
+      }
+    }
+
+    // Stop session
+    function stopSession() {
+      try {
+        log('Stopping voice session...');
+        
+        if (socket && isConnected) {
+          socket.emit('stop-voice-session');
+        }
+        
+        if (stream) {
+          stream.getTracks().forEach(track => track.stop());
+          stream = null;
+        }
+        
+        updateStatus('Connected', 'connected');
+        document.getElementById('sessionBtn').disabled = false;
+        document.getElementById('stopBtn').disabled = true;
+        
+        log('Voice session stopped', 'success');
+        
+      } catch (error) {
+        log('Stop error: ' + error.message, 'error');
+      }
+    }
+
+    // Reset UI
+    function resetUI() {
+      document.getElementById('connectBtn').disabled = false;
+      document.getElementById('sessionBtn').disabled = true;
+      document.getElementById('stopBtn').disabled = true;
+    }
+
+    // Initialize on page load
+    window.onload = () => {
+      log('WebRTC Voice AI Test (Bundled) ready');
+      log('This version uses a simplified approach without mediasoup-client');
+      log('Click "Test Connection" to begin');
+      
+      updateStatus('Ready', 'disconnected');
+      document.getElementById('connectBtn').disabled = false;
+    };
+  </script>
+</body>
+</html>

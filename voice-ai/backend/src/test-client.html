@@ -1,0 +1,294 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Voice AI - MediaSoup Test Client</title>
+    <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #333;
+        }
+        button {
+            background-color: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            margin: 5px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+        }
+        button:hover {
+            background-color: #0056b3;
+        }
+        button:disabled {
+            background-color: #6c757d;
+            cursor: not-allowed;
+        }
+        #status {
+            margin: 20px 0;
+            padding: 10px;
+            border-radius: 4px;
+            background-color: #e9ecef;
+        }
+        #logs {
+            margin-top: 20px;
+            padding: 10px;
+            background-color: #f8f9fa;
+            border: 1px solid #dee2e6;
+            border-radius: 4px;
+            height: 200px;
+            overflow-y: auto;
+            font-family: 'Courier New', monospace;
+            font-size: 14px;
+        }
+        .log-entry {
+            margin: 2px 0;
+        }
+        .log-info { color: #0066cc; }
+        .log-success { color: #28a745; }
+        .log-error { color: #dc3545; }
+        .log-warning { color: #ffc107; }
+        .controls {
+            margin: 20px 0;
+        }
+        #audioLevel {
+            width: 100%;
+            height: 20px;
+            background-color: #e9ecef;
+            border-radius: 10px;
+            overflow: hidden;
+            margin: 10px 0;
+        }
+        #audioLevelBar {
+            height: 100%;
+            background-color: #28a745;
+            width: 0%;
+            transition: width 0.1s ease;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Voice AI - MediaSoup Test Client</h1>
+        
+        <div id="status">
+            <strong>Status:</strong> <span id="connectionStatus">Disconnected</span>
+        </div>
+
+        <div class="controls">
+            <button id="connectBtn" onclick="connect()">Connect to Server</button>
+            <button id="disconnectBtn" onclick="disconnect()" disabled>Disconnect</button>
+            <button id="startAudioBtn" onclick="startAudio()" disabled>Start Audio</button>
+            <button id="stopAudioBtn" onclick="stopAudio()" disabled>Stop Audio</button>
+        </div>
+
+        <div>
+            <strong>Audio Level:</strong>
+            <div id="audioLevel">
+                <div id="audioLevelBar"></div>
+            </div>
+        </div>
+
+        <h3>Server Logs:</h3>
+        <div id="logs"></div>
+    </div>
+
+    <script>
+        let socket = null;
+        let device = null;
+        let producerTransport = null;
+        let producer = null;
+        let audioStream = null;
+        let audioContext = null;
+        let analyser = null;
+        let dataArray = null;
+        let animationId = null;
+
+        function log(message, type = 'info') {
+            const logs = document.getElementById('logs');
+            const entry = document.createElement('div');
+            entry.className = `log-entry log-${type}`;
+            const timestamp = new Date().toLocaleTimeString();
+            entry.textContent = `[${timestamp}] ${message}`;
+            logs.appendChild(entry);
+            logs.scrollTop = logs.scrollHeight;
+        }
+
+        function updateStatus(status) {
+            document.getElementById('connectionStatus').textContent = status;
+        }
+
+        async function connect() {
+            try {
+                log('Connecting to MediaSoup server...');
+                socket = io('http://localhost:3000');
+
+                socket.on('connect', () => {
+                    log('Connected to server', 'success');
+                    updateStatus('Connected');
+                    document.getElementById('connectBtn').disabled = true;
+                    document.getElementById('disconnectBtn').disabled = false;
+                    document.getElementById('startAudioBtn').disabled = false;
+                    
+                    // Get router capabilities
+                    socket.emit('getRouterRtpCapabilities', (capabilities) => {
+                        log('Received router RTP capabilities', 'success');
+                        // In a real implementation, you'd initialize mediasoup-client Device here
+                        // For this test, we're just verifying the connection
+                    });
+                });
+
+                socket.on('disconnect', () => {
+                    log('Disconnected from server', 'warning');
+                    updateStatus('Disconnected');
+                    resetUI();
+                });
+
+                socket.on('error', (error) => {
+                    log(`Socket error: ${error}`, 'error');
+                });
+
+            } catch (error) {
+                log(`Connection error: ${error.message}`, 'error');
+            }
+        }
+
+        function disconnect() {
+            if (socket) {
+                stopAudio();
+                socket.disconnect();
+                socket = null;
+                resetUI();
+                log('Disconnected from server');
+            }
+        }
+
+        async function startAudio() {
+            try {
+                log('Requesting microphone access...');
+                audioStream = await navigator.mediaDevices.getUserMedia({ 
+                    audio: {
+                        echoCancellation: true,
+                        noiseSuppression: true,
+                        autoGainControl: true,
+                        sampleRate: 16000
+                    } 
+                });
+                
+                log('Microphone access granted', 'success');
+                
+                // Set up audio visualization
+                audioContext = new AudioContext();
+                analyser = audioContext.createAnalyser();
+                const source = audioContext.createMediaStreamSource(audioStream);
+                source.connect(analyser);
+                analyser.fftSize = 256;
+                const bufferLength = analyser.frequencyBinCount;
+                dataArray = new Uint8Array(bufferLength);
+                
+                // Start visualization
+                visualizeAudio();
+                
+                // Request transport creation
+                socket.emit('createTransport', { direction: 'send' }, (transportInfo) => {
+                    if (transportInfo.error) {
+                        log(`Transport creation error: ${transportInfo.error}`, 'error');
+                        return;
+                    }
+                    
+                    log('Transport created successfully', 'success');
+                    log(`Transport ID: ${transportInfo.id}`, 'info');
+                    
+                    // In a real implementation, you'd connect the transport and create a producer here
+                    // For this test, we're verifying the transport creation works
+                });
+                
+                document.getElementById('startAudioBtn').disabled = true;
+                document.getElementById('stopAudioBtn').disabled = false;
+                
+            } catch (error) {
+                log(`Audio error: ${error.message}`, 'error');
+            }
+        }
+
+        function stopAudio() {
+            if (audioStream) {
+                audioStream.getTracks().forEach(track => track.stop());
+                audioStream = null;
+            }
+            
+            if (animationId) {
+                cancelAnimationFrame(animationId);
+                animationId = null;
+            }
+            
+            if (audioContext) {
+                audioContext.close();
+                audioContext = null;
+            }
+            
+            document.getElementById('audioLevelBar').style.width = '0%';
+            
+            document.getElementById('startAudioBtn').disabled = false;
+            document.getElementById('stopAudioBtn').disabled = true;
+            
+            log('Audio stopped');
+        }
+
+        function visualizeAudio() {
+            if (!analyser) return;
+            
+            analyser.getByteFrequencyData(dataArray);
+            
+            let sum = 0;
+            for (let i = 0; i < dataArray.length; i++) {
+                sum += dataArray[i];
+            }
+            const average = sum / dataArray.length;
+            const percentage = (average / 255) * 100;
+            
+            document.getElementById('audioLevelBar').style.width = percentage + '%';
+            
+            animationId = requestAnimationFrame(visualizeAudio);
+        }
+
+        function resetUI() {
+            document.getElementById('connectBtn').disabled = false;
+            document.getElementById('disconnectBtn').disabled = true;
+            document.getElementById('startAudioBtn').disabled = true;
+            document.getElementById('stopAudioBtn').disabled = true;
+        }
+
+        // Health check
+        async function checkHealth() {
+            try {
+                const response = await fetch('http://localhost:3000/health');
+                const data = await response.json();
+                log(`Server health: ${JSON.stringify(data)}`, 'info');
+            } catch (error) {
+                log(`Health check failed: ${error.message}`, 'error');
+            }
+        }
+
+        // Initial health check
+        window.onload = () => {
+            checkHealth();
+        };
+    </script>
+</body>
+</html>

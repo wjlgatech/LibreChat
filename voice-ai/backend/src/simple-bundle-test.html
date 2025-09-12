@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Simple Bundle Test</title>
+</head>
+<body>
+  <h1>Simple Bundle Test</h1>
+  <div id="output"></div>
+
+  <script src="/mediasoup-client.bundle.js"></script>
+  
+  <script>
+    const output = document.getElementById('output');
+    
+    function log(msg) {
+      output.innerHTML += `<p>${msg}</p>`;
+      console.log(msg);
+    }
+    
+    setTimeout(() => {
+      log('Available window keys containing "media": ' + Object.keys(window).filter(k => k.toLowerCase().includes('media')));
+      log('window.mediasoupClient: ' + typeof window.mediasoupClient);
+      
+      if (window.mediasoupClient) {
+        log('mediasoupClient keys: ' + Object.keys(window.mediasoupClient));
+        log('Device exists: ' + (!!window.mediasoupClient.Device));
+      } else {
+        log('❌ mediasoupClient not found on window');
+      }
+    }, 100);
+  </script>
+</body>
+</html>

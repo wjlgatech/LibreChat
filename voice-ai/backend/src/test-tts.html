@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Voice AI - TTS Service Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #333;
+        }
+        .form-group {
+            margin: 15px 0;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+        textarea {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            resize: vertical;
+            min-height: 100px;
+        }
+        select, button {
+            padding: 10px 20px;
+            margin: 5px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 16px;
+        }
+        button {
+            background-color: #007bff;
+            color: white;
+            border: none;
+            cursor: pointer;
+        }
+        button:hover {
+            background-color: #0056b3;
+        }
+        button:disabled {
+            background-color: #6c757d;
+            cursor: not-allowed;
+        }
+        audio {
+            width: 100%;
+            margin-top: 20px;
+        }
+        .status {
+            margin: 20px 0;
+            padding: 10px;
+            border-radius: 4px;
+            background-color: #e9ecef;
+        }
+        .error {
+            background-color: #f8d7da;
+            color: #721c24;
+        }
+        .success {
+            background-color: #d4edda;
+            color: #155724;
+        }
+        .info {
+            background-color: #d1ecf1;
+            color: #0c5460;
+        }
+        #logs {
+            margin-top: 20px;
+            padding: 10px;
+            background-color: #f8f9fa;
+            border: 1px solid #dee2e6;
+            border-radius: 4px;
+            height: 200px;
+            overflow-y: auto;
+            font-family: 'Courier New', monospace;
+            font-size: 14px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎙️ Voice AI - TTS Service Test</h1>
+        
+        <div id="status" class="status info">
+            Ready to test TTS service
+        </div>
+
+        <div class="form-group">
+            <label for="text">Text to Synthesize:</label>
+            <textarea id="text" placeholder="Enter text to convert to speech...">Hello! This is a test of the Voice AI Text-to-Speech service. The quick brown fox jumps over the lazy dog.</textarea>
+        </div>
+
+        <div class="form-group">
+            <label for="voice">Voice:</label>
+            <select id="voice">
+                <option value="">Loading voices...</option>
+            </select>
+        </div>
+
+        <div class="form-group">
+            <button id="synthesizeBtn" onclick="synthesizeSpeech()">🔊 Synthesize Speech</button>
+            <button id="streamBtn" onclick="streamSpeech()">📡 Stream Speech</button>
+            <button id="getVoicesBtn" onclick="loadVoices()">🔄 Refresh Voices</button>
+            <button id="healthBtn" onclick="checkHealth()">💚 Check Health</button>
+        </div>
+
+        <div class="form-group">
+            <audio id="audioPlayer" controls style="display: none;"></audio>
+        </div>
+
+        <h3>Server Logs:</h3>
+        <div id="logs"></div>
+    </div>
+
+    <script>
+        const API_BASE = 'http://localhost:3000/api/tts';
+        
+        function log(message, type = 'info') {
+            const logs = document.getElementById('logs');
+            const entry = document.createElement('div');
+            const timestamp = new Date().toLocaleTimeString();
+            entry.textContent = `[${timestamp}] ${message}`;
+            entry.style.color = type === 'error' ? '#dc3545' : type === 'success' ? '#28a745' : '#333';
+            logs.appendChild(entry);
+            logs.scrollTop = logs.scrollHeight;
+        }
+
+        function setStatus(message, type = 'info') {
+            const status = document.getElementById('status');
+            status.textContent = message;
+            status.className = `status ${type}`;
+        }
+
+        async function loadVoices() {
+            try {
+                log('Loading voices...');
+                const response = await fetch(`${API_BASE}/voices`);
+                const data = await response.json();
+                
+                if (response.ok) {
+                    const select = document.getElementById('voice');
+                    select.innerHTML = '';
+                    
+                    data.voices.forEach(voice => {
+                        const option = document.createElement('option');
+                        option.value = voice;
+                        option.textContent = voice.charAt(0).toUpperCase() + voice.slice(1);
+                        select.appendChild(option);
+                    });
+                    
+                    log(`Loaded ${data.voices.length} voices from ${data.provider}`, 'success');
+                    setStatus(`TTS Provider: ${data.provider}`, 'success');
+                } else {
+                    throw new Error(data.error || 'Failed to load voices');
+                }
+            } catch (error) {
+                log(`Error loading voices: ${error.message}`, 'error');
+                setStatus('Failed to load voices', 'error');
+            }
+        }
+
+        async function synthesizeSpeech() {
+            try {
+                const text = document.getElementById('text').value;
+                const voice = document.getElementById('voice').value;
+                
+                if (!text) {
+                    setStatus('Please enter text to synthesize', 'error');
+                    return;
+                }
+
+                log(`Synthesizing speech with voice: ${voice || 'default'}`);
+                setStatus('Synthesizing speech...', 'info');
+                
+                const response = await fetch(`${API_BASE}/synthesize`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ text, voice }),
+                });
+
+                if (response.ok) {
+                    const blob = await response.blob();
+                    const audioUrl = URL.createObjectURL(blob);
+                    const audioPlayer = document.getElementById('audioPlayer');
+                    
+                    audioPlayer.src = audioUrl;
+                    audioPlayer.style.display = 'block';
+                    audioPlayer.play();
+                    
+                    log('Speech synthesized successfully', 'success');
+                    setStatus('Speech synthesized successfully', 'success');
+                } else {
+                    const error = await response.json();
+                    throw new Error(error.error || 'Failed to synthesize speech');
+                }
+            } catch (error) {
+                log(`Error synthesizing speech: ${error.message}`, 'error');
+                setStatus('Failed to synthesize speech', 'error');
+            }
+        }
+
+        async function streamSpeech() {
+            try {
+                const text = document.getElementById('text').value;
+                const voice = document.getElementById('voice').value;
+                
+                if (!text) {
+                    setStatus('Please enter text to stream', 'error');
+                    return;
+                }
+
+                log(`Streaming speech with voice: ${voice || 'default'}`);
+                setStatus('Streaming speech...', 'info');
+                
+                const response = await fetch(`${API_BASE}/stream`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ text, voice }),
+                });
+
+                if (response.ok) {
+                    const blob = await response.blob();
+                    const audioUrl = URL.createObjectURL(blob);
+                    const audioPlayer = document.getElementById('audioPlayer');
+                    
+                    audioPlayer.src = audioUrl;
+                    audioPlayer.style.display = 'block';
+                    audioPlayer.play();
+                    
+                    log('Speech streamed successfully', 'success');
+                    setStatus('Speech streamed successfully', 'success');
+                } else {
+                    const error = await response.json();
+                    throw new Error(error.error || 'Failed to stream speech');
+                }
+            } catch (error) {
+                log(`Error streaming speech: ${error.message}`, 'error');
+                setStatus('Failed to stream speech', 'error');
+            }
+        }
+
+        async function checkHealth() {
+            try {
+                log('Checking TTS service health...');
+                const response = await fetch(`${API_BASE}/health`);
+                const data = await response.json();
+                
+                if (response.ok) {
+                    log(`Health: ${data.status}, Provider: ${data.provider}, Has API Key: ${data.hasApiKey}`, 'success');
+                    setStatus('TTS service is healthy', 'success');
+                } else {
+                    throw new Error('Health check failed');
+                }
+            } catch (error) {
+                log(`Health check error: ${error.message}`, 'error');
+                setStatus('TTS service health check failed', 'error');
+            }
+        }
+
+        // Initialize on load
+        window.onload = () => {
+            loadVoices();
+            checkHealth();
+        };
+    </script>
+</body>
+</html>

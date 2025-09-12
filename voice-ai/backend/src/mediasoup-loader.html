@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>MediaSoup Client Loader Test</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      padding: 20px;
+      max-width: 800px;
+      margin: 0 auto;
+    }
+    .status {
+      padding: 15px;
+      margin: 10px 0;
+      border-radius: 5px;
+    }
+    .success {
+      background: #d4edda;
+      color: #155724;
+    }
+    .error {
+      background: #f8d7da;
+      color: #721c24;
+    }
+    .info {
+      background: #d1ecf1;
+      color: #0c5460;
+    }
+    button {
+      padding: 10px 20px;
+      margin: 5px;
+      cursor: pointer;
+      font-size: 16px;
+    }
+    pre {
+      background: #f4f4f4;
+      padding: 10px;
+      border-radius: 5px;
+      overflow-x: auto;
+    }
+  </style>
+</head>
+<body>
+  <h1>MediaSoup Client Loader Test</h1>
+  
+  <div id="status" class="status info">Testing different ways to load mediasoup-client...</div>
+  
+  <div style="margin: 20px 0;">
+    <button onclick="testMethod1()">Test Method 1: UMD from unpkg</button>
+    <button onclick="testMethod2()">Test Method 2: Direct script</button>
+    <button onclick="testMethod3()">Test Method 3: Dynamic import</button>
+  </div>
+  
+  <h3>Results:</h3>
+  <pre id="results"></pre>
+
+  <script>
+    function updateStatus(message, type = 'info') {
+      const status = document.getElementById('status');
+      status.className = `status ${type}`;
+      status.textContent = message;
+      
+      const results = document.getElementById('results');
+      results.textContent += `[${new Date().toLocaleTimeString()}] ${message}\n`;
+    }
+
+    // Method 1: Load UMD build from unpkg
+    function testMethod1() {
+      updateStatus('Testing Method 1: Loading UMD build from unpkg...');
+      
+      const script = document.createElement('script');
+      script.src = 'https://unpkg.com/mediasoup-client@3.7.16/lib/index.umd.js';
+      script.onload = () => {
+        if (window.mediasoupClient) {
+          updateStatus('✅ Method 1 SUCCESS: mediasoupClient loaded!', 'success');
+          console.log('mediasoupClient:', window.mediasoupClient);
+          testDevice();
+        } else {
+          updateStatus('❌ Method 1 FAILED: mediasoupClient not found', 'error');
+        }
+      };
+      script.onerror = () => {
+        updateStatus('❌ Method 1 FAILED: Script load error', 'error');
+      };
+      document.head.appendChild(script);
+    }
+
+    // Method 2: Load from jsdelivr
+    function testMethod2() {
+      updateStatus('Testing Method 2: Loading from jsdelivr...');
+      
+      const script = document.createElement('script');
+      script.src = 'https://cdn.jsdelivr.net/npm/mediasoup-client@3.7.16/+esm';
+      script.type = 'module';
+      script.textContent = `
+        import * as mediasoupClient from 'https://cdn.jsdelivr.net/npm/mediasoup-client@3.7.16/+esm';
+        window.mediasoupClient = mediasoupClient;
+        window.dispatchEvent(new Event('mediasoupLoaded'));
+      `;
+      document.head.appendChild(script);
+      
+      window.addEventListener('mediasoupLoaded', () => {
+        if (window.mediasoupClient) {
+          updateStatus('✅ Method 2 SUCCESS: mediasoupClient loaded!', 'success');
+          testDevice();
+        } else {
+          updateStatus('❌ Method 2 FAILED: mediasoupClient not found', 'error');
+        }
+      }, { once: true });
+    }
+
+    // Method 3: Dynamic import
+    async function testMethod3() {
+      updateStatus('Testing Method 3: Dynamic import...');
+      
+      try {
+        const module = await import('https://cdn.skypack.dev/mediasoup-client@3');
+        window.mediasoupClient = module;
+        updateStatus('✅ Method 3 SUCCESS: mediasoupClient loaded!', 'success');
+        console.log('mediasoupClient module:', module);
+        testDevice();
+      } catch (error) {
+        updateStatus('❌ Method 3 FAILED: ' + error.message, 'error');
+      }
+    }
+
+    // Test creating a Device
+    function testDevice() {
+      try {
+        const Device = window.mediasoupClient.Device || 
+                      window.mediasoupClient.default?.Device ||
+                      (window.mediasoupClient.types && window.mediasoupClient.types.Device);
+        
+        if (Device) {
+          const device = new Device();
+          updateStatus('✅ Device created successfully!', 'success');
+          
+          // Now create the working test page
+          createWorkingTestPage();
+        } else {
+          updateStatus('❌ Device class not found in mediasoupClient', 'error');
+          console.log('Available properties:', Object.keys(window.mediasoupClient));
+        }
+      } catch (error) {
+        updateStatus('❌ Error creating device: ' + error.message, 'error');
+      }
+    }
+
+    // Create a working test page once we know which method works
+    function createWorkingTestPage() {
+      updateStatus('Creating working test page...', 'info');
+      
+      // Store the working method
+      localStorage.setItem('mediasoupLoadMethod', 'umd');
+      
+      // Redirect to working test
+      setTimeout(() => {
+        window.location.href = '/test-webrtc-working.html';
+      }, 2000);
+    }
+
+    // Auto-test on load
+    window.onload = () => {
+      updateStatus('Page loaded. Click a button to test loading methods.');
+    };
+  </script>
+</body>
+</html>
